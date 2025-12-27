@@ -4,10 +4,12 @@
 import org.freeplane.core.util.HtmlUtils
 import javax.swing.*
 
+
 // ================= بررسی وجود URI =================
 def hasURI(node) {
     extractPlainTextFromNode(node).split('\n').any { it.trim().startsWith("freeplane:") }
 }
+
 
 // ================= دیالوگ =================
 def showSimpleDialog() {
@@ -22,6 +24,7 @@ def showSimpleDialog() {
         options[0]
     )
 }
+
 
 // ================= متن خام =================
 def extractPlainTextFromNode(node) {
@@ -45,29 +48,94 @@ def getFirstLineFromText(text) {
     text.split('\n').find { it.trim() && !it.startsWith("freeplane:") && !it.startsWith("obsidian://") }?.trim() ?: "لینک"
 }
 
+
 // ================= تبدیل NodeModel → NodeProxy =================
 def asProxy(n) {
     (n.metaClass.hasProperty(n, "connectorsIn")) ? n :
         c.find { it.delegate == n }.find()
 }
 
-// ================= استخراج کانکتورها =================
+
+// ================= استخراج کانکتورها (بر اساس جهت فلش) =================
 def extractConnectedNodes(node) {
     node = asProxy(node)
     if (!node) return ['ورودی': [], 'خروجی': [], 'دوطرفه': []]
 
-    def map = [:]
-    node.connectorsIn.each { map[it.source.delegate] = (map[it.source.delegate] ?: []) + "ورودی" }
-    node.connectorsOut.each { map[it.target.delegate] = (map[it.target.delegate] ?: []) + "خروجی" }
-
+    def nodeId = node.id
     def grouped = ['ورودی': [], 'خروجی': [], 'دوطرفه': []]
-    map.each { n, types ->
-        if (types.contains("ورودی") && types.contains("خروجی")) grouped['دوطرفه'] << n
-        else if (types.contains("ورودی")) grouped['ورودی'] << n
-        else if (types.contains("خروجی")) grouped['خروجی'] << n
+
+    // همه کانکتورها از in و out
+    def allConnectors = (node.connectorsIn + node.connectorsOut).unique()
+
+    allConnectors.each { con ->
+        def src = con.source?.delegate
+        def tgt = con.target?.delegate
+        if (!src || !tgt) return
+
+        def srcId = src.id
+        def tgtId = tgt.id
+
+        def otherNode
+        def nodeIsSource = false
+
+        // تشخیص اینکه گره جاری source است یا target
+        if (srcId == nodeId) {
+            otherNode   = tgt
+            nodeIsSource = true
+        } else if (tgtId == nodeId) {
+            otherNode   = src
+        } else {
+            // کانکتوری که اصلاً به این گره ربطی ندارد
+            return
+        }
+
+        if (!otherNode) return
+
+        def start = con.hasStartArrow()
+        def end   = con.hasEndArrow()
+
+        if (start && end) {
+            // دو فلش → دوطرفه
+            if (!grouped['دوطرفه'].contains(otherNode))
+                grouped['دوطرفه'] << otherNode
+        }
+        else if (start && !end) {
+            // معکوس: start=true end=false → برعکس
+            if (nodeIsSource) {
+                // node → otherNode → «ورودی» نسبت به node (طبق الگوی تو)
+                if (!grouped['ورودی'].contains(otherNode))
+                    grouped['وریدی'] << otherNode
+            } else {
+                // otherNode → node → «خروجی»
+                if (!grouped['خروجی'].contains(otherNode))
+                    grouped['خروجی'] << otherNode
+            }
+        }
+        else if (!start && end) {
+            // معکوس: !start end=true → برعکس
+            if (nodeIsSource) {
+                // otherNode → node → «خروجی»
+                if (!grouped['خروجی'].contains(otherNode))
+                    grouped['خروجی'] << otherNode
+            } else {
+                // node → otherNode → «ورودی»
+                if (!grouped['ورودی'].contains(otherNode))
+                    grouped['ورودی'] << otherNode
+            }
+        }
+        else {
+            // بدون فلش → بر اساس جهت connector (source / target)
+            if (nodeIsSource) {
+                grouped['خروجی'] << otherNode
+            } else {
+                grouped['ورودی'] << otherNode
+            }
+        }
     }
+
     grouped
 }
+
 
 // ================= HTML کانکتورها =================
 def generateConnectorsHTML(grouped) {
@@ -82,14 +150,23 @@ def generateConnectorsHTML(grouped) {
     ['ورودی','خروجی','دوطرفه'].each { type ->
         def nodes = grouped[type]
         if (nodes && !nodes.isEmpty()) {
-            html << "<div style='font-weight:bold;margin:5px 0;text-align:right;direction:rtl;'>گره‌های ${type}:</div>"
-            nodes.eachWithIndex { n,i ->
-                html << "<div style='margin-right:15px;margin-bottom:3px;text-align:right;direction:rtl;'>${i+1}. ${makeLink(n)}</div>"
+
+            // برچسب‌های جدید برای عنوان هر بخش
+            def titleLabel =
+                (type == 'ورودی')   ? '↙️ورودی (Input):' :
+                (type == 'خروجی')   ? '↗️خروجی (Output):' :
+                                      '↔️دوطرفه (Mutual):'
+
+            html << "<div style='font-weight:bold;margin:5px 0;text-align:right;direction:rtl;'>${titleLabel}</div>"
+            nodes.each { n ->
+                // بالت کاملاً کنار لبه راست
+                html << "<div style='margin-right:0px;margin-bottom:3px;text-align:right;direction:rtl;'>• ${makeLink(n)}</div>"
             }
         }
     }
     html.join("")
 }
+
 
 // ================= لینک‌های متنی =================
 def extractTextLinksFromDetails(node) {
@@ -101,6 +178,7 @@ def extractTextLinksFromDetails(node) {
     m.each { list << [uri: it[1], title: it[2]] }
     list
 }
+
 
 // ================= استخراج لینک‌ها از متن گره (یو آر آی حذف می‌شود) =================
 def extractTextLinksFromNodeText(node) {
@@ -144,6 +222,7 @@ def extractTextLinksFromNodeText(node) {
     freeplaneLinks + obsidianLinks
 }
 
+
 // ================= ذخیره Details =================
 def saveDetails(node, textLinks, connectors) {
     def html = []
@@ -152,9 +231,10 @@ def saveDetails(node, textLinks, connectors) {
     // ✅ گروه‌بندی Freeplane
     def freeplaneLinks = textLinks.findAll { it.uri.startsWith("freeplane:") || it.uri.startsWith("#") }
     if (freeplaneLinks && !freeplaneLinks.isEmpty()) {
-        html << "<div style='font-weight:bold;margin:5px 0;text-align:right;direction:rtl;'>🔗 لینک‌های فری‌پلن:</div>"
-        freeplaneLinks.eachWithIndex { l,i ->
-            html << "<div style='margin-right:15px;text-align:right;'>${i+1}. " +
+        // عنوان جدید فریپلن
+        html << "<div style='font-weight:bold;margin:5px 0;text-align:right;direction:rtl;'>🔗 فریپلن(FP):</div>"
+        freeplaneLinks.each { l ->
+            html << "<div style='margin-right:0px;text-align:right;'>• " +
                     "<a data-link-type='text' href='${l.uri}'>" +
                     HtmlUtils.toXMLEscapedText(l.title) +
                     "</a></div>"
@@ -162,15 +242,16 @@ def saveDetails(node, textLinks, connectors) {
         hasNewCategory = true
     }
     
-    // ✅ گروه‌بندی Obsidian (فقط اگر Freeplane بود → خط بکش)
+    // ✅ گروه‌بندی Obsidian
     def obsidianLinks = textLinks.findAll { it.uri.startsWith("obsidian://") }
     if (obsidianLinks && !obsidianLinks.isEmpty()) {
         if (hasNewCategory) {
-            html << "<hr>"  // ✅ خط قبل دسته جدید
+            html << "<hr>"  // خط قبل دسته جدید
         }
-        html << "<div style='font-weight:bold;margin:5px 0;text-align:right;direction:rtl;'>📱 لینک‌های ابسیدین:</div>"
-        obsidianLinks.eachWithIndex { l,i ->
-            html << "<div style='margin-right:15px;text-align:right;'>${i+1}. " +
+        // عنوان جدید ابسیدین
+        html << "<div style='font-weight:bold;margin:5px 0;text-align:right;direction:rtl;'>📱 ابسیدین(Obsidian):</div>"
+        obsidianLinks.each { l ->
+            html << "<div style='margin-right:0px;text-align:right;'>• " +
                     "<a data-link-type='text' href='${l.uri}'>" +
                     HtmlUtils.toXMLEscapedText(l.title) +
                     "</a></div>"
@@ -181,7 +262,7 @@ def saveDetails(node, textLinks, connectors) {
     def connectorsHTML = generateConnectorsHTML(connectors)
     if (connectorsHTML) {
         if (hasNewCategory) {
-            html << "<hr>"  // ✅ خط قبل کانکتورها
+            html << "<hr>"  // خط قبل کانکتورها
         }
         html << connectorsHTML
     }
@@ -209,6 +290,7 @@ def createBackwardTextLink(targetNode, sourceNode) {
     saveDetails(targetNode, textLinks, extractConnectedNodes(targetNode))
 }
 
+
 // ================= آپدیت کانکتورهای طرف مقابل =================
 def updateOtherSideConnectors(centerNode) {
     def connected = extractConnectedNodes(centerNode)
@@ -222,6 +304,7 @@ def updateOtherSideConnectors(centerNode) {
         )
     }
 }
+
 
 // ================= پردازش گره =================
 def processNode(mode) {
@@ -251,6 +334,7 @@ def processNode(mode) {
     // آپدیت کانکتورهای طرف مقابل
     updateOtherSideConnectors(node)
 }
+
 
 // ================= اجرا =================
 try {
