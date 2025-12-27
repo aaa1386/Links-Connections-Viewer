@@ -1,13 +1,16 @@
 // @ExecutionModes({ON_SINGLE_NODE="/menu_bar/link"})
-// aaa1386 - FINAL FIXED VERSION (bullets tight at right, no font styling)
+// aaa1386 - FIXED dialog + title update + null safety
 
 import org.freeplane.core.util.HtmlUtils
 import javax.swing.*
 
-// ================= Check URI existence =================
-def hasURI(node) {
-    def text = node.text ?: ""
-    return text.contains("#") || text.contains("freeplane:") || text =~ /https?:\/\//
+// ================= Check URI existence in WHOLE MAP =================
+def hasURI() {
+    def allNodes = c.find { true }
+    allNodes.any { node ->
+        def text = node.text ?: ""
+        text.contains("#") || text.contains("freeplane:") || text =~ /https?:\/\//
+    }
 }
 
 // ================= Dialog =================
@@ -94,31 +97,24 @@ def extractConnectedNodes(node) {
                 grouped['Bidirectional'] << otherNode
         } 
         else if (start && !end) {
-            // معکوس: start=true end=false → برعکس عمل کن
             if (nodeIsSource) {
-                // node → otherNode → ورودی (معکوس)
                 if (!grouped['Input'].contains(otherNode))
                     grouped['Input'] << otherNode
             } else {
-                // otherNode → node → خروجی (معکوس)
                 if (!grouped['Output'].contains(otherNode))
                     grouped['Output'] << otherNode
             }
         }
         else if (!start && end) {
-            // معکوس: !start end=true → برعکس عمل کن
             if (nodeIsSource) {
-                // otherNode → node → خروجی (معکوس)
                 if (!grouped['Output'].contains(otherNode))
                     grouped['Output'] << otherNode
             } else {
-                // node → otherNode → ورودی (معکوس)
                 if (!grouped['Input'].contains(otherNode))
                     grouped['Input'] << otherNode
             }
         }
         else {
-            // بدون فلش
             if (nodeIsSource) {
                 grouped['Output'] << otherNode
             } else {
@@ -151,7 +147,6 @@ def generateConnectorsHTML(grouped) {
                                      '↔️دوطرفه (Mutual)'
             html << "<div style='font-weight:bold;margin:5px 0;text-align:right;direction:rtl;'>${label}:</div>"
             nodes.each { n ->
-                // بالت کاملاً کنار لبه‌ی راست
                 html << "<div style='margin-right:0px;text-align:right;direction:rtl;'>• ${makeLink(n)}</div>"
             }
         }
@@ -177,30 +172,30 @@ def extractTextLinksFromNodeText(node) {
     def keepLines = []
 
     extractPlainTextFromNode(node).split('\n').each { l ->
-        def t = l.trim()
-        if (t.startsWith("freeplane:") || t.contains("#") || t =~ /https?:\/\//) {
+        def t = l?.trim()
+        if (t?.startsWith("freeplane:") || t?.contains("#") || (t =~ /https?:\/\//)) {
             def parts = t.split(' ', 2)
-            def uri = parts[0]
+            def uri = parts[0] ?: ""
             def title = null
 
-            if (uri.contains("#")) {
+            if (uri?.contains("#")) {
                 def targetId = uri.substring(uri.lastIndexOf('#')+1)
                 def targetNode = c.find { it.id == targetId }.find()
                 if (targetNode) {
                     title = getFirstLineFromText(extractPlainTextFromNode(targetNode))
                 } else {
-                    title = (parts.length > 1) ? parts[1].trim() : "Replace title from other map"
+                    title = (parts.length > 1) ? parts[1]?.trim() : "Replace title from other map"
                 }
             } else {
-                title = (parts.length > 1) ? parts[1].trim() : "Link"
+                title = (parts.length > 1) ? parts[1]?.trim() : "Link"
             }
 
             freeplaneLinks << [uri: uri, title: title]
         }
-        else if (t.startsWith("obsidian://")) {
+        else if (t?.startsWith("obsidian://")) {
             def parts = t.split(' ', 2)
-            def uri = parts[0]
-            def title = (parts.length > 1) ? parts[1].trim() : "Obsidian"
+            def uri = parts[0] ?: ""
+            def title = (parts.length > 1) ? parts[1]?.trim() : "Obsidian"
             obsidianLinks << [uri: uri, title: title]
         }
         else if (t) {
@@ -211,33 +206,58 @@ def extractTextLinksFromNodeText(node) {
     freeplaneLinks + obsidianLinks
 }
 
+// ============== کمک برای آپدیت عنوان لینک‌ها ==============
+def resolveTitleForLink(link) {
+    def uri = link.uri ?: ""
+    if (uri && (uri.startsWith("freeplane:") || uri.startsWith("#"))) {
+        if (uri.contains("#")) {
+            def targetId = uri.substring(uri.lastIndexOf('#') + 1)
+            if (targetId) {
+                def targetNode = c.find { it.id == targetId }.find()
+                if (targetNode) {
+                    return getFirstLineFromText(extractPlainTextFromNode(targetNode))
+                }
+            }
+        }
+    }
+    return link.title ?: "Link"
+}
+
 // ================= Save Details =================
 def saveDetails(node, textLinks, connectors) {
     def html = []
     def hasNewCategory = false
 
-    def freeplaneLinks = textLinks.findAll { it.uri.startsWith("freeplane:") || it.uri.startsWith("#") || it.uri =~ /https?:\/\// }
+    def freeplaneLinks = textLinks.findAll { 
+        def u = it.uri ?: ""
+        u.startsWith("freeplane:") || u.startsWith("#") || (u =~ /https?:\/\//)
+    }
     if (freeplaneLinks && !freeplaneLinks.isEmpty()) {
         html << "<div style='font-weight:bold;margin:5px 0;text-align:right;direction:rtl;'>🔗 فریپلن(FP):</div>"
         freeplaneLinks.each { l ->
+            def titleNow = resolveTitleForLink(l)
             html << "<div style='margin-right:0px;text-align:right;'>• " +
-                    "<a data-link-type='text' href='${l.uri}'>" +
-                    HtmlUtils.toXMLEscapedText(l.title) +
+                    "<a data-link-type='text' href='${l.uri ?: ""}'>" +
+                    HtmlUtils.toXMLEscapedText(titleNow) +
                     "</a></div>"
         }
         hasNewCategory = true
     }
 
-    def obsidianLinks = textLinks.findAll { it.uri.startsWith("obsidian://") }
+    def obsidianLinks = textLinks.findAll { 
+        def u = it.uri ?: ""
+        u.startsWith("obsidian://")
+    }
     if (obsidianLinks && !obsidianLinks.isEmpty()) {
         if (hasNewCategory) {
             html << "<hr>"
         }
         html << "<div style='font-weight:bold;margin:5px 0;text-align:right;direction:rtl;'>📱 ابسیدین(Obsidian):</div>"
         obsidianLinks.each { l ->
+            def titleNow = l.title ?: "Obsidian"
             html << "<div style='margin-right:0px;text-align:right;'>• " +
-                    "<a data-link-type='text' href='${l.uri}'>" +
-                    HtmlUtils.toXMLEscapedText(l.title) +
+                    "<a data-link-type='text' href='${l.uri ?: ""}'>" +
+                    HtmlUtils.toXMLEscapedText(titleNow) +
                     "</a></div>"
         }
         hasNewCategory = true
@@ -266,7 +286,7 @@ def createBackwardTextLink(targetNode, sourceNode) {
     def title = getFirstLineFromText(extractPlainTextFromNode(sourceNode))
 
     def textLinks = extractTextLinksFromDetails(targetNode)
-    if (!textLinks.any { it.uri == sourceUri }) {
+    if (!textLinks.any { (it.uri ?: "") == sourceUri }) {
         textLinks << [uri: sourceUri, title: title]
     }
 
@@ -278,14 +298,15 @@ def processSingleNode(node, mode) {
     def newLinks = extractTextLinksFromNodeText(node)
     def connectors = extractConnectedNodes(node)
     def existingTextLinks = extractTextLinksFromDetails(node)
-    def finalTextLinks = (existingTextLinks + newLinks).unique { it.uri }
+    def finalTextLinks = (existingTextLinks + newLinks).unique { it.uri ?: "" }
 
     saveDetails(node, finalTextLinks, connectors)
 
     if (mode == "Two-way") {
         newLinks.each { link ->
-            if (link.uri.contains("#")) {
-                def targetId = link.uri.substring(link.uri.lastIndexOf('#') + 1)
+            def uri = link.uri ?: ""
+            if (uri.contains("#")) {
+                def targetId = uri.substring(uri.lastIndexOf('#') + 1)
                 def targetNode = c.find { it.id == targetId }.find()
                 if (targetNode && targetNode != node) {
                     createBackwardTextLink(targetNode, node)
@@ -310,7 +331,7 @@ def updateAllConnectors(mode) {
         def newLinks = extractTextLinksFromNodeText(proxyNode)
         def connectors = extractConnectedNodes(proxyNode)
         def existingTextLinks = extractTextLinksFromDetails(proxyNode)
-        def finalTextLinks = (existingTextLinks + newLinks).unique { it.uri }
+        def finalTextLinks = (existingTextLinks + newLinks).unique { it.uri ?: "" }
 
         saveDetails(proxyNode, finalTextLinks, connectors)
     }
@@ -321,10 +342,11 @@ try {
     def node = c.selected
     if (!node) return
 
-    def hasUri = hasURI(node)
+    // ✅ تغییر اصلی: چک کل نقشه برای URI
+    def hasAnyUri = hasURI()
 
     def mode
-    if (hasUri) {
+    if (hasAnyUri) {
         mode = showSimpleDialog()
     } else {
         mode = "One-way"
