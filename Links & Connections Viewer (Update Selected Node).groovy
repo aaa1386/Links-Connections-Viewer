@@ -42,7 +42,7 @@ def extractPlainTextFromNode(node) {
 
 def getFirstLineFromText(text) {
     if (!text) return "لینک"
-    text.split('\n').find { it.trim() && !it.startsWith("freeplane:") }?.trim() ?: "لینک"
+    text.split('\n').find { it.trim() && !it.startsWith("freeplane:") && !it.startsWith("obsidian://") }?.trim() ?: "لینک"
 }
 
 // ================= تبدیل NodeModel → NodeProxy =================
@@ -129,7 +129,15 @@ def extractTextLinksFromNodeText(node) {
             }
 
             links << [uri: uri, title: title]
-        } else if (t) {
+        } 
+        // ✅ Obsidian URI
+        else if (t.startsWith("obsidian://")) {
+            def parts = t.split(' ', 2)
+            def uri = parts[0]
+            def title = (parts.length > 1) ? parts[1].trim() : "ابسیدین"
+            links << [uri: uri, title: title]
+        }
+        else if (t) {
             keepLines << t
         }
     }
@@ -239,4 +247,3 @@ try {
 } catch (e) {
     ui.showMessage("خطا:\n${e.message}", 0)
 }
-
