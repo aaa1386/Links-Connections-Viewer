@@ -1,22 +1,22 @@
 // @ExecutionModes({ON_SINGLE_NODE="/menu_bar/link"})
-// aj1386
+// aaa1386
 
 import org.freeplane.core.util.HtmlUtils
 import javax.swing.*
 
-// ================= چک کردن وجود URI =================
+// ================= Check URI existence =================
 def hasURI(node) {
     def text = node.text ?: ""
     return text.contains("#") || text.contains("freeplane:") || text =~ /https?:\/\//
 }
 
-// ================= دیالوگ =================
+// ================= Dialog =================
 def showSimpleDialog() {
-    Object[] options = ["یک طرفه", "دو طرفه"]
+    Object[] options = ["One-way", "Two-way"]
     JOptionPane.showInputDialog(
         ui.frame,
-        "لطفا نوع لینک‌سازی را انتخاب کنید:",
-        "انتخاب نوع لینک",
+        "Please select link type:",
+        "Select Link Type",
         JOptionPane.QUESTION_MESSAGE,
         null,
         options,
@@ -24,7 +24,7 @@ def showSimpleDialog() {
     )
 }
 
-// ================= متن خام =================
+// ================= Raw text =================
 def extractPlainTextFromNode(node) {
     def c = node.text ?: ""
     if (c.contains("<body>")) {
@@ -42,44 +42,44 @@ def extractPlainTextFromNode(node) {
 }
 
 def getFirstLineFromText(text) {
-    if (!text) return "لینک"
+    if (!text) return "Link"
     text.split('\n').find {
         it.trim() && !it.startsWith("freeplane:") && !it.startsWith("obsidian://")
-    }?.trim() ?: "لینک"
+    }?.trim() ?: "Link"
 }
 
-// ================= تبدیل NodeModel → NodeProxy =================
+// ================= NodeModel → NodeProxy =================
 def asProxy(n) {
     (n.metaClass.hasProperty(n, "connectorsIn")) ? n :
         c.find { it.delegate == n }.find()
 }
 
-// ================= استخراج کانکتورها =================
+// ================= Extract connectors =================
 def extractConnectedNodes(node) {
     node = asProxy(node)
-    if (!node) return ['ورودی':[], 'خروجی':[], 'دوطرفه':[]]
+    if (!node) return ['Input':[], 'Output':[], 'Bidirectional':[]]
 
     def map = [:]
     node.connectorsIn.each {
-        map[it.source.delegate] = (map[it.source.delegate] ?: []) + "ورودی"
+        map[it.source.delegate] = (map[it.source.delegate] ?: []) + "Input"
     }
     node.connectorsOut.each {
-        map[it.target.delegate] = (map[it.target.delegate] ?: []) + "خروجی"
+        map[it.target.delegate] = (map[it.target.delegate] ?: []) + "Output"
     }
 
-    def grouped = ['ورودی': [], 'خروجی': [], 'دوطرفه': []]
+    def grouped = ['Input': [], 'Output': [], 'Bidirectional': []]
     map.each { n, types ->
-        if (types.contains("ورودی") && types.contains("خروجی"))
-            grouped['دوطرفه'] << n
-        else if (types.contains("ورودی"))
-            grouped['ورودی'] << n
-        else if (types.contains("خروجی"))
-            grouped['خروجی'] << n
+        if (types.contains("Input") && types.contains("Output"))
+            grouped['Bidirectional'] << n
+        else if (types.contains("Input"))
+            grouped['Input'] << n
+        else if (types.contains("Output"))
+            grouped['Output'] << n
     }
     grouped
 }
 
-// ================= HTML کانکتورها =================
+// ================= Connector HTML =================
 def generateConnectorsHTML(grouped) {
     def html = []
     
@@ -91,10 +91,10 @@ def generateConnectorsHTML(grouped) {
         "</a>"
     }
 
-    ['ورودی','خروجی','دوطرفه'].each { type ->
+    ['Input','Output','Bidirectional'].each { type ->
         def nodes = grouped[type]
         if (nodes && !nodes.isEmpty()) {
-            html << "<div style='font-weight:bold;margin:5px 0;text-align:right;direction:rtl;'>گره‌های ${type}:</div>"
+            html << "<div style='font-weight:bold;margin:5px 0;text-align:right;direction:rtl;'>${type} nodes:</div>"
             nodes.eachWithIndex { n, i ->
                 html << "<div style='margin-right:15px;text-align:right;direction:rtl;'>${i+1}. ${makeLink(n)}</div>"
             }
@@ -103,7 +103,7 @@ def generateConnectorsHTML(grouped) {
     html.join("")
 }
 
-// ================= لینک‌های متنی از Details =================
+// ================= Text links from Details =================
 def extractTextLinksFromDetails(node) {
     def list = []
     def h = node.detailsText
@@ -114,7 +114,7 @@ def extractTextLinksFromDetails(node) {
     list
 }
 
-// ================= استخراج URI از متن گره + پاکسازی =================
+// ================= Extract URI from node text + cleanup =================
 def extractTextLinksFromNodeText(node) {
     def freeplaneLinks = []
     def obsidianLinks = []
@@ -133,10 +133,10 @@ def extractTextLinksFromNodeText(node) {
                 if (targetNode) {
                     title = getFirstLineFromText(extractPlainTextFromNode(targetNode))
                 } else {
-                    title = (parts.length > 1) ? parts[1].trim() : "عنوان را از نقشه دیگر جایگزین کن"
+                    title = (parts.length > 1) ? parts[1].trim() : "Replace title from other map"
                 }
             } else {
-                title = (parts.length > 1) ? parts[1].trim() : "لینک"
+                title = (parts.length > 1) ? parts[1].trim() : "Link"
             }
 
             freeplaneLinks << [uri: uri, title: title]
@@ -145,7 +145,7 @@ def extractTextLinksFromNodeText(node) {
         else if (t.startsWith("obsidian://")) {
             def parts = t.split(' ', 2)
             def uri = parts[0]
-            def title = (parts.length > 1) ? parts[1].trim() : "ابسیدین"
+            def title = (parts.length > 1) ? parts[1].trim() : "Obsidian"
             obsidianLinks << [uri: uri, title: title]
         }
         else if (t) {
@@ -157,15 +157,15 @@ def extractTextLinksFromNodeText(node) {
     freeplaneLinks + obsidianLinks
 }
 
-// ================= ذخیره Details =================
+// ================= Save Details =================
 def saveDetails(node, textLinks, connectors) {
     def html = []
     def hasNewCategory = false
     
-    // ✅ گروه‌بندی Freeplane
+    // ✅ Freeplane grouping
     def freeplaneLinks = textLinks.findAll { it.uri.startsWith("freeplane:") || it.uri.startsWith("#") || it.uri =~ /https?:\/\// }
     if (freeplaneLinks && !freeplaneLinks.isEmpty()) {
-        html << "<div style='font-weight:bold;margin:5px 0;text-align:right;direction:rtl;'>🔗 لینک‌های فری‌پلن:</div>"
+        html << "<div style='font-weight:bold;margin:5px 0;text-align:right;direction:rtl;'>🔗 Freeplane links:</div>"
         freeplaneLinks.eachWithIndex { l, i ->
             html << "<div style='margin-right:15px;text-align:right;'>${i+1}. " +
                     "<a data-link-type='text' href='${l.uri}'>" +
@@ -175,13 +175,13 @@ def saveDetails(node, textLinks, connectors) {
         hasNewCategory = true
     }
     
-    // ✅ گروه‌بندی Obsidian (فقط اگر Freeplane بود → خط بکش)
+    // ✅ Obsidian grouping (only if Freeplane exists → draw line)
     def obsidianLinks = textLinks.findAll { it.uri.startsWith("obsidian://") }
     if (obsidianLinks && !obsidianLinks.isEmpty()) {
         if (hasNewCategory) {
-            html << "<hr>"  // ✅ خط قبل دسته جدید
+            html << "<hr>"  // ✅ Line before new category
         }
-        html << "<div style='font-weight:bold;margin:5px 0;text-align:right;direction:rtl;'>📱 لینک‌های ابسیدین:</div>"
+        html << "<div style='font-weight:bold;margin:5px 0;text-align:right;direction:rtl;'>📱 Obsidian links:</div>"
         obsidianLinks.eachWithIndex { l, i ->
             html << "<div style='margin-right:15px;text-align:right;'>${i+1}. " +
                     "<a data-link-type='text' href='${l.uri}'>" +
@@ -194,12 +194,12 @@ def saveDetails(node, textLinks, connectors) {
     def connectorsHTML = generateConnectorsHTML(connectors)
     if (connectorsHTML) {
         if (hasNewCategory) {
-            html << "<hr>"  // ✅ خط قبل کانکتورها
+            html << "<hr>"  // ✅ Line before connectors
         }
         html << connectorsHTML
     }
     
-    // 🔹 فقط اگر محتوا هست set کن
+    // 🔹 Set only if content exists
     if (html && !html.isEmpty()) {
         node.details = "<html><body style='direction:rtl;'>${html.join("")}</body></html>"
         node.detailsContentType = "html"
@@ -209,7 +209,7 @@ def saveDetails(node, textLinks, connectors) {
     }
 }
 
-// ================= لینک برگشتی متنی =================
+// ================= Backward text link =================
 def createBackwardTextLink(targetNode, sourceNode) {
     def sourceUri = "#${sourceNode.id}"
     def title = getFirstLineFromText(extractPlainTextFromNode(sourceNode))
@@ -222,7 +222,7 @@ def createBackwardTextLink(targetNode, sourceNode) {
     saveDetails(targetNode, textLinks, extractConnectedNodes(targetNode))
 }
 
-// ================= پردازش تک گره =================
+// ================= Process single node =================
 def processSingleNode(node, mode) {
     def newLinks = extractTextLinksFromNodeText(node)
     def connectors = extractConnectedNodes(node)
@@ -231,7 +231,7 @@ def processSingleNode(node, mode) {
 
     saveDetails(node, finalTextLinks, connectors)
 
-    if (mode == "دو طرفه") {
+    if (mode == "Two-way") {
         newLinks.each { link ->
             if (link.uri.contains("#")) {
                 def targetId = link.uri.substring(link.uri.lastIndexOf('#') + 1)
@@ -244,21 +244,21 @@ def processSingleNode(node, mode) {
     }
 }
 
-// ================= آپدیت کامل نقشه (URI + Obsidian همه گره‌ها) =================
+// ================= Full map update (URI + Obsidian all nodes) =================
 def updateAllConnectors(mode) {
     def node = c.selected
     if (!node) return
     
-    // ✅ اول گره انتخاب شده (mode اعمال)
+    // ✅ First selected node (mode applied)
     processSingleNode(node, mode)
     
-    // ✅ همه گره‌های نقشه → URI ها + Obsidian استخراج + پاکسازی
+    // ✅ All map nodes → URI + Obsidian extraction + cleanup
     def allNodes = c.find { true }
     allNodes.each { n ->
         def proxyNode = asProxy(n)
-        if (!proxyNode || proxyNode == node) return  // گره انتخاب شده قبلاً پردازش شد
+        if (!proxyNode || proxyNode == node) return  // Selected node already processed
         
-        // ✅ برای همه: URI ها + Obsidian استخراج
+        // ✅ For all: URI + Obsidian extraction
         def newLinks = extractTextLinksFromNodeText(proxyNode)
         def connectors = extractConnectedNodes(proxyNode)
         def existingTextLinks = extractTextLinksFromDetails(proxyNode)
@@ -268,19 +268,19 @@ def updateAllConnectors(mode) {
     }
 }
 
-// ================= اجرا =================
+// ================= Execute =================
 try {
     def node = c.selected
     if (!node) return
     
-    // ✅ فقط اگر URI در گره انتخابی باشد → دیالوگ
+    // ✅ Dialog only if URI in selected node
     def hasUri = hasURI(node)
     
     def mode
     if (hasUri) {
         mode = showSimpleDialog()
     } else {
-        mode = "یک طرفه"  // مستقیم اجرا بدون دیالوگ
+        mode = "One-way"  // Execute directly without dialog
     }
     
     if (!mode) return
@@ -288,5 +288,5 @@ try {
     updateAllConnectors(mode)
     
 } catch (e) {
-    ui.showMessage("خطا:\n${e.message}", 0)
+    ui.showMessage("Error:\n${e.message}", 0)
 }
