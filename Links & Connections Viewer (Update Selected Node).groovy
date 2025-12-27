@@ -104,7 +104,8 @@ def extractTextLinksFromDetails(node) {
 
 // ================= استخراج لینک‌ها از متن گره (یو آر آی حذف می‌شود) =================
 def extractTextLinksFromNodeText(node) {
-    def links = []
+    def freeplaneLinks = []
+    def obsidianLinks = []
     def keepLines = []
 
     extractPlainTextFromNode(node).split('\n').each { l ->
@@ -118,50 +119,70 @@ def extractTextLinksFromNodeText(node) {
                 def targetId = uri.substring(uri.lastIndexOf('#')+1)
                 def targetNode = c.find { it.id == targetId }.find()
                 if (targetNode) {
-                    // ✅ اگر گره مقصد داخل همین نقشه است → عنوان گره مقصد
                     title = getFirstLineFromText(extractPlainTextFromNode(targetNode))
                 } else {
-                    // 🔹 اگر گره در نقشه دیگر است
                     title = (parts.length > 1) ? parts[1].trim() : "عنوان را از نقشه دیگر جایگزین کن"
                 }
             } else {
                 title = (parts.length > 1) ? parts[1].trim() : "لینک"
             }
 
-            links << [uri: uri, title: title]
+            freeplaneLinks << [uri: uri, title: title]
         } 
         // ✅ Obsidian URI
         else if (t.startsWith("obsidian://")) {
             def parts = t.split(' ', 2)
             def uri = parts[0]
             def title = (parts.length > 1) ? parts[1].trim() : "ابسیدین"
-            links << [uri: uri, title: title]
+            obsidianLinks << [uri: uri, title: title]
         }
         else if (t) {
             keepLines << t
         }
     }
     node.text = keepLines.join("\n")
-    links
+    freeplaneLinks + obsidianLinks
 }
 
 // ================= ذخیره Details =================
 def saveDetails(node, textLinks, connectors) {
     def html = []
+    def hasNewCategory = false
     
-    if (textLinks && !textLinks.isEmpty()) {
-        html << "<div style='font-weight:bold;text-align:right;'>لینک‌ها:</div>"
-        textLinks.eachWithIndex { l,i ->
+    // ✅ گروه‌بندی Freeplane
+    def freeplaneLinks = textLinks.findAll { it.uri.startsWith("freeplane:") || it.uri.startsWith("#") }
+    if (freeplaneLinks && !freeplaneLinks.isEmpty()) {
+        html << "<div style='font-weight:bold;margin:5px 0;text-align:right;direction:rtl;'>🔗 لینک‌های فری‌پلن:</div>"
+        freeplaneLinks.eachWithIndex { l,i ->
             html << "<div style='margin-right:15px;text-align:right;'>${i+1}. " +
                     "<a data-link-type='text' href='${l.uri}'>" +
                     HtmlUtils.toXMLEscapedText(l.title) +
                     "</a></div>"
         }
-        html << "<hr>"
+        hasNewCategory = true
+    }
+    
+    // ✅ گروه‌بندی Obsidian (فقط اگر Freeplane بود → خط بکش)
+    def obsidianLinks = textLinks.findAll { it.uri.startsWith("obsidian://") }
+    if (obsidianLinks && !obsidianLinks.isEmpty()) {
+        if (hasNewCategory) {
+            html << "<hr>"  // ✅ خط قبل دسته جدید
+        }
+        html << "<div style='font-weight:bold;margin:5px 0;text-align:right;direction:rtl;'>📱 لینک‌های ابسیدین:</div>"
+        obsidianLinks.eachWithIndex { l,i ->
+            html << "<div style='margin-right:15px;text-align:right;'>${i+1}. " +
+                    "<a data-link-type='text' href='${l.uri}'>" +
+                    HtmlUtils.toXMLEscapedText(l.title) +
+                    "</a></div>"
+        }
+        hasNewCategory = true
     }
     
     def connectorsHTML = generateConnectorsHTML(connectors)
     if (connectorsHTML) {
+        if (hasNewCategory) {
+            html << "<hr>"  // ✅ خط قبل کانکتورها
+        }
         html << connectorsHTML
     }
     
@@ -170,11 +191,11 @@ def saveDetails(node, textLinks, connectors) {
         node.details = "<html><body style='direction:rtl;'>${html.join("")}</body></html>"
         node.detailsContentType = "html"
     } else {
-        // ❌ خالی کن - کادر محو می‌شود
         node.details = null
         node.detailsContentType = null
     }
 }
+
 
 // ================= لینک برگشتی متنی =================
 def createBackwardTextLink(targetNode, sourceNode) {
