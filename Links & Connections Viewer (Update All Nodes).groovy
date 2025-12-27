@@ -1,5 +1,5 @@
 // @ExecutionModes({ON_SINGLE_NODE="/menu_bar/link"})
-// aaa1386 - FINAL FIXED VERSION - Bullets only
+// aaa1386 - FINAL FIXED VERSION (bullets tight at right, no font styling)
 
 import org.freeplane.core.util.HtmlUtils
 import javax.swing.*
@@ -146,12 +146,13 @@ def generateConnectorsHTML(grouped) {
         def nodes = grouped[type]
         if (nodes && !nodes.isEmpty()) {
             def label =
-                (type == 'Input') ? 'Input ←' :
-                (type == 'Output') ? 'Output →' :
-                                     'Mutual ↔'
-            html << "<div style='font-weight:bold;margin:5px 0;text-align:left;direction:rtl;'>${label}:</div>"
-            nodes.eachWithIndex { n, i ->
-                html << "<div style='margin-right:15px;text-align:right;direction:rtl;'>• ${makeLink(n)}</div>"
+                (type == 'Input')  ? '↙️ورودی (Input)' :
+                (type == 'Output') ? '↗️خروجی (Output)' :
+                                     '↔️دوطرفه (Mutual)'
+            html << "<div style='font-weight:bold;margin:5px 0;text-align:right;direction:rtl;'>${label}:</div>"
+            nodes.each { n ->
+                // بالت کاملاً کنار لبه‌ی راست
+                html << "<div style='margin-right:0px;text-align:right;direction:rtl;'>• ${makeLink(n)}</div>"
             }
         }
     }
@@ -217,9 +218,9 @@ def saveDetails(node, textLinks, connectors) {
 
     def freeplaneLinks = textLinks.findAll { it.uri.startsWith("freeplane:") || it.uri.startsWith("#") || it.uri =~ /https?:\/\// }
     if (freeplaneLinks && !freeplaneLinks.isEmpty()) {
-        html << "<div style='font-weight:bold;margin:5px 0;text-align:right;direction:rtl;'>🔗 Freeplane links:</div>"
-        freeplaneLinks.eachWithIndex { l, i ->
-            html << "<div style='margin-right:15px;text-align:right;'>• " +
+        html << "<div style='font-weight:bold;margin:5px 0;text-align:right;direction:rtl;'>🔗 فریپلن(FP):</div>"
+        freeplaneLinks.each { l ->
+            html << "<div style='margin-right:0px;text-align:right;'>• " +
                     "<a data-link-type='text' href='${l.uri}'>" +
                     HtmlUtils.toXMLEscapedText(l.title) +
                     "</a></div>"
@@ -232,9 +233,9 @@ def saveDetails(node, textLinks, connectors) {
         if (hasNewCategory) {
             html << "<hr>"
         }
-        html << "<div style='font-weight:bold;margin:5px 0;text-align:right;direction:rtl;'>📱 Obsidian links:</div>"
-        obsidianLinks.eachWithIndex { l, i ->
-            html << "<div style='margin-right:15px;text-align:right;'>• " +
+        html << "<div style='font-weight:bold;margin:5px 0;text-align:right;direction:rtl;'>📱 ابسیدین(Obsidian):</div>"
+        obsidianLinks.each { l ->
+            html << "<div style='margin-right:0px;text-align:right;'>• " +
                     "<a data-link-type='text' href='${l.uri}'>" +
                     HtmlUtils.toXMLEscapedText(l.title) +
                     "</a></div>"
