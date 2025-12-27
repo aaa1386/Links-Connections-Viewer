@@ -1,5 +1,5 @@
 // @ExecutionModes({ON_SINGLE_NODE="/menu_bar/link"})
-// aaa1386 - FINAL FIXED VERSION
+// aaa1386 - FINAL FIXED VERSION - Bullets only
 
 import org.freeplane.core.util.HtmlUtils
 import javax.swing.*
@@ -151,13 +151,12 @@ def generateConnectorsHTML(grouped) {
                                      'Mutual ↔'
             html << "<div style='font-weight:bold;margin:5px 0;text-align:left;direction:rtl;'>${label}:</div>"
             nodes.eachWithIndex { n, i ->
-                html << "<div style='margin-right:15px;text-align:right;direction:rtl;'>${i+1}. ${makeLink(n)}</div>"
+                html << "<div style='margin-right:15px;text-align:right;direction:rtl;'>• ${makeLink(n)}</div>"
             }
         }
     }
     html.join("")
 }
-
 
 // ================= Text links from Details =================
 def extractTextLinksFromDetails(node) {
@@ -220,7 +219,7 @@ def saveDetails(node, textLinks, connectors) {
     if (freeplaneLinks && !freeplaneLinks.isEmpty()) {
         html << "<div style='font-weight:bold;margin:5px 0;text-align:right;direction:rtl;'>🔗 Freeplane links:</div>"
         freeplaneLinks.eachWithIndex { l, i ->
-            html << "<div style='margin-right:15px;text-align:right;'>${i+1}. " +
+            html << "<div style='margin-right:15px;text-align:right;'>• " +
                     "<a data-link-type='text' href='${l.uri}'>" +
                     HtmlUtils.toXMLEscapedText(l.title) +
                     "</a></div>"
@@ -235,7 +234,7 @@ def saveDetails(node, textLinks, connectors) {
         }
         html << "<div style='font-weight:bold;margin:5px 0;text-align:right;direction:rtl;'>📱 Obsidian links:</div>"
         obsidianLinks.eachWithIndex { l, i ->
-            html << "<div style='margin-right:15px;text-align:right;'>${i+1}. " +
+            html << "<div style='margin-right:15px;text-align:right;'>• " +
                     "<a data-link-type='text' href='${l.uri}'>" +
                     HtmlUtils.toXMLEscapedText(l.title) +
                     "</a></div>"
