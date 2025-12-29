@@ -1,5 +1,5 @@
 // @ExecutionModes({ON_SINGLE_NODE="/menu_bar/link"})
-// aaa1386 - ICON ONLY + HR + ALL TEXT v2 - NO MARKER - FreeplaneURI ONLY
+// aaa1386 - ICON ONLY + HR + ALL TEXT v2 - FIXED + OPTIMIZED
 
 import org.freeplane.core.util.HtmlUtils
 import javax.swing.*
@@ -65,7 +65,7 @@ def extractConnectedNodes(node) {
     def nodeId = node.id
     def grouped = ['Input': [], 'Output': [], 'Bidirectional': []]
 
-    def allConnectors = (node.connectorsIn + node.connectorsOut).unique()
+    def allConnectors = (node.connectorsIn + node.connectorsOut).unique().toList()
 
     allConnectors.each { con ->
         def src = con.source?.delegate
@@ -171,7 +171,7 @@ def getSmartTitle(uri) {
     return title + '...'
 }
 
-// ================= Extract links - همه متن =================
+// ================= Extract links - FINAL FIXED =================
 def extractTextLinksFromNodeText(node) {
     def freeplaneLinks = []
     def obsidianLinks = []
@@ -189,28 +189,8 @@ def extractTextLinksFromNodeText(node) {
         
         def processed = false
         
-        // 0. URL ساده 🌐
-        if (!processed && trimmed =~ /^https?:\/\/[^\s]+$/) {
-            webLinks << [uri: trimmed, title: getSmartTitle(trimmed)]
-            processed = true
-        }
-        
-        // 1. Markdown: [title](url) 🌐
-        else if (!processed && (trimmed =~ /\[([^\]]*?)\]\s*\(\s*(https?:\/\/[^\)\s]+)\s*\)/)) {
-            def mdMatcher = (trimmed =~ /\[([^\]]*?)\]\s*\(\s*(https?:\/\/[^\)\s]+)\s*\)/)
-            mdMatcher.each { match ->
-                def title = match[1].trim()
-                def uri = match[2].trim()
-                if (!title || title == uri) {
-                    title = getSmartTitle(uri)
-                }
-                webLinks << [uri: uri, title: title]
-            }
-            processed = true
-        }
-        
-        // 2. Markdown خالی:  🌐
-        else if (!processed && (trimmed =~ /\[\s*\]\s*\(\s*(https?:\/\/[^\)\s]+)\s*\)/)) {
+        // 0. Markdown خالی: []() ✅ اول!
+        if (!processed && (trimmed =~ /\[\s*\]\s*\(\s*(https?:\/\/[^\)\s]+)\s*\)/)) {
             def emptyMatcher = (trimmed =~ /\[\s*\]\s*\(\s*(https?:\/\/[^\)\s]+)\s*\)/)
             emptyMatcher.each { match ->
                 def uri = match[1].trim()
@@ -219,18 +199,25 @@ def extractTextLinksFromNodeText(node) {
             processed = true
         }
         
-        // 3. Markdown + Title 🌐
-        else if (!processed && trimmed =~ /\[([^\]]*)\]\s*\(\s*(https?:\/\/[^\)\s]+)\s*\)\s+(.+)/) {
-            def matcher = (trimmed =~ /\[([^\]]*)\]\s*\(\s*(https?:\/\/[^\)\s]+)\s*\)\s+(.+)/)
-            matcher.each { match ->
+        // 1. Markdown با عنوان: [title](url)
+        else if (!processed && (trimmed =~ /\[([^\]]*?)\]\s*\(\s*(https?:\/\/[^\)\s]+)\s*\)/)) {
+            def mdMatcher = (trimmed =~ /\[([^\]]*?)\]\s*\(\s*(https?:\/\/[^\)\s]+)\s*\)/)
+            mdMatcher.each { match ->
+                def title = match[1].trim()
                 def uri = match[2].trim()
-                def title = match[3].trim()
+                if (!title || title == uri) title = getSmartTitle(uri)
                 webLinks << [uri: uri, title: title]
             }
             processed = true
         }
         
-        // 4. URL + Title 🌐
+        // 2. URL ساده
+        else if (!processed && trimmed =~ /^https?:\/\/[^\s]+$/) {
+            webLinks << [uri: trimmed, title: getSmartTitle(trimmed)]
+            processed = true
+        }
+        
+        // 3. URL + Title
         else if (!processed && trimmed =~ /(https?:\/\/[^\s]+)\s+(.+)/) {
             def matcher = (trimmed =~ /(https?:\/\/[^\s]+)\s+(.+)/)
             matcher.each { match ->
@@ -241,34 +228,34 @@ def extractTextLinksFromNodeText(node) {
             processed = true
         }
         
-        // 5. Freeplane 🔗
-        else if (!processed && (trimmed?.startsWith("freeplane:") || trimmed?.contains("#"))) {
+        // 4. Freeplane
+        else if (!processed && (trimmed.startsWith("freeplane:") || trimmed.contains("#"))) {
             def parts = trimmed.split(' ', 2)
             def uri = parts[0] ?: ""
-            def title = null
+            def titlePart = parts.length > 1 ? parts[1]?.trim() : null
 
-            if (uri?.contains("#")) {
+            if (uri.contains("#")) {
                 def targetId = uri.substring(uri.lastIndexOf('#')+1)
                 def targetNode = c.find { it.id == targetId }.find()
                 if (targetNode) {
-                    title = getFirstLineFromText(extractPlainTextFromNode(targetNode))
+                    titlePart = getFirstLineFromText(extractPlainTextFromNode(targetNode))
                 } else {
-                    title = (parts.length > 1) ? parts[1]?.trim() : "Replace title from other map"
+                    titlePart = titlePart ?: "Replace title from other map"
                 }
             } else {
-                title = (parts.length > 1) ? parts[1]?.trim() : "Link"
+                titlePart = titlePart ?: "Link"
             }
 
-            freeplaneLinks << [uri: uri, title: title]
+            freeplaneLinks << [uri: uri, title: titlePart]
             processed = true
         }
         
-        // 6. Obsidian 📱
-        else if (!processed && trimmed?.startsWith("obsidian://")) {
+        // 5. Obsidian
+        else if (!processed && trimmed.startsWith("obsidian://")) {
             def parts = trimmed.split(' ', 2)
             def uri = parts[0] ?: ""
-            def title = (parts.length > 1) ? parts[1]?.trim() : "Obsidian"
-            obsidianLinks << [uri: uri, title: title]
+            def titlePart = parts.length > 1 ? parts[1]?.trim() : "Obsidian"
+            obsidianLinks << [uri: uri, title: titlePart]
             processed = true
         }
         
@@ -398,21 +385,25 @@ def processSingleNode(node, mode) {
     }
 }
 
-// ================= Full map update =================
+// ================= Full map update - OPTIMIZED =================
 def updateAllConnectors(mode) {
     def node = c.selected
     if (!node) return
 
+    // 🚀 Cache all nodes - یکبار محاسبه!
+    def allNodes = c.find { true }.toList()
+    def processed = [] as Set
+
     // گره انتخاب شده
     processSingleNode(node, mode)
 
-    // بقیه گره‌ها: پردازش کامل با حالت دوطرفه
-    def allNodes = c.find { true }
+    // بقیه گره‌ها
     allNodes.each { n ->
         def proxyNode = asProxy(n)
-        if (!proxyNode || proxyNode == node) return
-
-        // پردازش کامل متن + کانکتورها + لینک دوطرفه
+        if (!proxyNode || proxyNode == node || processed.contains(proxyNode.id)) return
+        
+        processed << proxyNode.id
+        
         def newLinks = extractTextLinksFromNodeText(proxyNode)
         def connectors = extractConnectedNodes(proxyNode)
         def existingTextLinks = extractTextLinksFromDetails(proxyNode)
@@ -420,7 +411,6 @@ def updateAllConnectors(mode) {
 
         saveDetails(proxyNode, finalTextLinks, connectors)
 
-        // لینک دوطرفه برای همه گره‌ها
         if (mode == "Two-way") {
             newLinks.each { link ->
                 def uri = link.uri ?: ""
@@ -453,7 +443,6 @@ try {
     if (!mode) return
 
     updateAllConnectors(mode)
-    // پیام حذف شد ✅
 
 } catch (e) {
     ui.showMessage("Error:\n${e.message}", 0)
