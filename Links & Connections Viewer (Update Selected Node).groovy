@@ -1,5 +1,7 @@
 // @ExecutionModes({ON_SINGLE_NODE="/menu_bar/link"})
-// aj1386 -حذف خط
+// aj1386 - FIXED null safety + ICON ONLY + HR
+//https://github.com/aaa1386/Links-Connections-Viewer/blob/main/README.md
+//https://github.com/aaa1386/Links-Connections-Viewer
 
 import org.freeplane.core.util.HtmlUtils
 import javax.swing.*
