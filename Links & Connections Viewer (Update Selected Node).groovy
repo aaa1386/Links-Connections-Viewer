@@ -160,33 +160,17 @@ def extractTextLinksFromDetails(node) {
     list
 }
 
-// ================= استخراج لینک‌ها - فقط بعد از //// =================
+// ================= استخراج لینک‌ها - همه متن =================
 def extractTextLinksFromNodeText(node) {
     def freeplaneLinks = []
     def obsidianLinks = []
     def webLinks = []
     def keepLines = []
-    def processSection = false  // قبل از //// خاموش
-
+    
     def lines = node.text.split('\n')
     
     lines.each { l ->
         def trimmed = l.trim()
-        
-        // علامت شروع: ////
-        if (trimmed == "////") {
-            processSection = true
-            keepLines << l
-            return
-        }
-        
-        // قبل از //// : هیچ پردازشی نکن
-        if (!processSection) {
-            keepLines << l
-            return
-        }
-        
-        // بعد از //// : پردازش عادی
         if (!trimmed) {
             keepLines << l
             return
@@ -215,7 +199,7 @@ def extractTextLinksFromNodeText(node) {
             processed = true
         }
         
-        // 2. Markdown خالی: [](url) 🌐
+        // 2. Markdown خالی:  🌐
         else if (!processed && (trimmed =~ /\[\s*\]\s*\(\s*(https?:\/\/[^\)\s]+)\s*\)/)) {
             def emptyMatcher = (trimmed =~ /\[\s*\]\s*\(\s*(https?:\/\/[^\)\s]+)\s*\)/)
             emptyMatcher.each { match ->
@@ -425,7 +409,7 @@ try {
     
     if (mode) {
         processNode(mode)
-        ui.showMessage("✅ فقط لینک‌های بعد از '////' پردازش شد", 1)
+        // ui.showMessage("✅ همه لینک‌های متن پردازش شد", 1)
     }
 } catch (e) {
     ui.showMessage("خطا:\n${e.message}", 0)
