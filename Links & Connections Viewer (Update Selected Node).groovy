@@ -1,7 +1,5 @@
 // @ExecutionModes({ON_SINGLE_NODE="/menu_bar/link"})
-// aj1386 - FIXED null safety + ICON ONLY + HR
-//https://github.com/aaa1386/Links-Connections-Viewer/blob/main/README.md
-//https://github.com/aaa1386/Links-Connections-Viewer
+// aaa1386 - 4 SLASH //// MARKER v6 - FIXED
 
 import org.freeplane.core.util.HtmlUtils
 import javax.swing.*
@@ -47,13 +45,20 @@ def getFirstLineFromText(text) {
     text.split('\n').find { it.trim() && !it.startsWith("freeplane:") && !it.startsWith("obsidian://") }?.trim() ?: "لینک"
 }
 
-// ================= تبدیل NodeModel → NodeProxy =================
+// ================= Smart Title =================
+def getSmartTitle(uri) {
+    def parts = uri.split(/\//)
+    if (parts.size() < 4) return uri + '...'
+    def title = parts[0] + '//' + parts[2] + '/'  
+    return title + '...'
+}
+
+// ================= بقیه توابع بدون تغییر =================
 def asProxy(n) {
     (n.metaClass.hasProperty(n, "connectorsIn")) ? n :
         c.find { it.delegate == n }.find()
 }
 
-// ================= استخراج کانکتورها (بر اساس جهت فلش) =================
 def extractConnectedNodes(node) {
     node = asProxy(node)
     if (!node) return ['ورودی': [], 'خروجی': [], 'دوطرفه': []]
@@ -118,11 +123,9 @@ def extractConnectedNodes(node) {
             }
         }
     }
-
     grouped
 }
 
-// ================= HTML کانکتورها (عنوان حذف + آیکن) =================
 def generateConnectorsHTML(grouped) {
     def html = []
 
@@ -147,7 +150,6 @@ def generateConnectorsHTML(grouped) {
     html.join("")
 }
 
-// ================= لینک‌های متنی =================
 def extractTextLinksFromDetails(node) {
     def list = []
     def h = node.detailsText
@@ -158,16 +160,96 @@ def extractTextLinksFromDetails(node) {
     list
 }
 
-// ================= استخراج لینک‌ها از متن گره (یو آر آی حذف می‌شود) =================
+// ================= استخراج لینک‌ها - فقط بعد از //// =================
 def extractTextLinksFromNodeText(node) {
     def freeplaneLinks = []
     def obsidianLinks = []
+    def webLinks = []
     def keepLines = []
+    def processSection = false  // قبل از //// خاموش
 
-    extractPlainTextFromNode(node).split('\n').each { l ->
-        def t = l.trim()
-        if (t?.startsWith("freeplane:")) {
-            def parts = t.split(' ', 2)
+    def lines = node.text.split('\n')
+    
+    lines.each { l ->
+        def trimmed = l.trim()
+        
+        // علامت شروع: ////
+        if (trimmed == "////") {
+            processSection = true
+            keepLines << l
+            return
+        }
+        
+        // قبل از //// : هیچ پردازشی نکن
+        if (!processSection) {
+            keepLines << l
+            return
+        }
+        
+        // بعد از //// : پردازش عادی
+        if (!trimmed) {
+            keepLines << l
+            return
+        }
+        
+        def processed = false
+        
+        // 0. URL ساده 🌐
+        if (!processed && trimmed =~ /^https?:\/\/[^\s]+$/) {
+            def uri = trimmed
+            webLinks << [uri: uri, title: getSmartTitle(uri)]
+            processed = true
+        }
+        
+        // 1. Markdown: [title](url) 🌐
+        else if (!processed && (trimmed =~ /\[([^\]]*?)\]\s*\(\s*(https?:\/\/[^\)\s]+)\s*\)/)) {
+            def mdMatcher = (trimmed =~ /\[([^\]]*?)\]\s*\(\s*(https?:\/\/[^\)\s]+)\s*\)/)
+            mdMatcher.each { match ->
+                def title = match[1].trim()
+                def uri = match[2].trim()
+                if (!title || title == uri) {
+                    title = getSmartTitle(uri)
+                }
+                webLinks << [uri: uri, title: title]
+            }
+            processed = true
+        }
+        
+        // 2. Markdown خالی: [](url) 🌐
+        else if (!processed && (trimmed =~ /\[\s*\]\s*\(\s*(https?:\/\/[^\)\s]+)\s*\)/)) {
+            def emptyMatcher = (trimmed =~ /\[\s*\]\s*\(\s*(https?:\/\/[^\)\s]+)\s*\)/)
+            emptyMatcher.each { match ->
+                def uri = match[1].trim()
+                webLinks << [uri: uri, title: getSmartTitle(uri)]
+            }
+            processed = true
+        }
+        
+        // 3. Markdown + Title 🌐
+        else if (!processed && trimmed =~ /\[([^\]]*)\]\s*\(\s*(https?:\/\/[^\)\s]+)\s*\)\s+(.+)/) {
+            def matcher = (trimmed =~ /\[([^\]]*)\]\s*\(\s*(https?:\/\/[^\)\s]+)\s*\)\s+(.+)/)
+            matcher.each { match ->
+                def uri = match[2].trim()
+                def title = match[3].trim()
+                webLinks << [uri: uri, title: title]
+            }
+            processed = true
+        }
+        
+        // 4. URL + Title 🌐
+        else if (!processed && trimmed =~ /(https?:\/\/[^\s]+)\s+(.+)/) {
+            def matcher = (trimmed =~ /(https?:\/\/[^\s]+)\s+(.+)/)
+            matcher.each { match ->
+                def uri = match[1].trim()
+                def title = match[2].trim()
+                webLinks << [uri: uri, title: title]
+            }
+            processed = true
+        }
+        
+        // 5. Freeplane 🔗
+        else if (!processed && (trimmed?.startsWith("freeplane:") || trimmed?.contains("#"))) {
+            def parts = trimmed.split(' ', 2)
             def uri = parts[0] ?: ""
             def title = null
 
@@ -177,29 +259,35 @@ def extractTextLinksFromNodeText(node) {
                 if (targetNode) {
                     title = getFirstLineFromText(extractPlainTextFromNode(targetNode))
                 } else {
-                    title = (parts.length > 1) ? parts[1].trim() : "عنوان را از نقشه دیگر جایگزین کن"
+                    title = (parts.length > 1) ? parts[1]?.trim() : "عنوان را از نقشه دیگر جایگزین کن"
                 }
             } else {
-                title = (parts.length > 1) ? parts[1].trim() : "لینک"
+                title = (parts.length > 1) ? parts[1]?.trim() : "لینک"
             }
 
             freeplaneLinks << [uri: uri, title: title]
-        } 
-        else if (t?.startsWith("obsidian://")) {
-            def parts = t.split(' ', 2)
-            def uri = parts[0] ?: ""
-            def title = (parts.length > 1) ? parts[1].trim() : "ابسیدین"
-            obsidianLinks << [uri: uri, title: title]
+            processed = true
         }
-        else if (t) {
-            keepLines << t
+        
+        // 6. Obsidian 📱
+        else if (!processed && trimmed?.startsWith("obsidian://")) {
+            def parts = trimmed.split(' ', 2)
+            def uri = parts[0] ?: ""
+            def title = (parts.length > 1) ? parts[1]?.trim() : "ابسیدین"
+            obsidianLinks << [uri: uri, title: title]
+            processed = true
+        }
+        
+        if (!processed) {
+            keepLines << l
         }
     }
-    node.text = keepLines.join("\n")
-    freeplaneLinks + obsidianLinks
+    
+    node.text = keepLines.join('\n')
+    return freeplaneLinks + obsidianLinks + webLinks
 }
 
-// ============== کمک برای آپدیت عنوان لینک‌ها بر اساس گره مقصد ==============
+// ============== بقیه توابع بدون تغییر (مختصر) ==============
 def resolveTitleForLink(link) {
     def uri = link.uri ?: ""
     if (uri && (uri.startsWith("freeplane:") || uri.startsWith("#"))) {
@@ -216,11 +304,23 @@ def resolveTitleForLink(link) {
     return link.title ?: "لینک"
 }
 
-// ================= ذخیره Details (بدون خط جداکننده) =================
 def saveDetails(node, textLinks, connectors) {
     def html = []
 
-    // Freeplane Links
+    def webLinks = textLinks.findAll { 
+        def uri = it.uri ?: ""
+        uri.startsWith("http://") || uri.startsWith("https://")
+    }
+    if (webLinks && !webLinks.isEmpty()) {
+        webLinks.each { l ->
+            def titleNow = l.title ?: l.uri
+            html << "<div style='margin-right:0px;text-align:right;direction:rtl;'>🌐 " +
+                    "<a data-link-type='text' href='${l.uri ?: ""}'>" +
+                    HtmlUtils.toXMLEscapedText(titleNow) +
+                    "</a></div>"
+        }
+    }
+    
     def freeplaneLinks = textLinks.findAll { (it.uri ?: "").startsWith("freeplane:") || (it.uri ?: "").startsWith("#") }
     if (freeplaneLinks && !freeplaneLinks.isEmpty()) {
         freeplaneLinks.each { l ->
@@ -232,7 +332,6 @@ def saveDetails(node, textLinks, connectors) {
         }
     }
     
-    // Obsidian Links
     def obsidianLinks = textLinks.findAll { (it.uri ?: "").startsWith("obsidian://") }
     if (obsidianLinks && !obsidianLinks.isEmpty()) {
         obsidianLinks.each { l ->
@@ -244,7 +343,6 @@ def saveDetails(node, textLinks, connectors) {
         }
     }
     
-    // Connectors
     def connectorsHTML = generateConnectorsHTML(connectors)
     if (connectorsHTML) {
         html << connectorsHTML
@@ -259,8 +357,6 @@ def saveDetails(node, textLinks, connectors) {
     }
 }
 
-
-// ================= لینک برگشتی متنی =================
 def createBackwardTextLink(targetNode, sourceNode) {
     def sourceUri = "#${sourceNode.id}"
     def sourceTitle = getFirstLineFromText(extractPlainTextFromNode(sourceNode))
@@ -272,7 +368,6 @@ def createBackwardTextLink(targetNode, sourceNode) {
     saveDetails(targetNode, textLinks, extractConnectedNodes(targetNode))
 }
 
-// ================= آپدیت کانکتورهای طرف مقابل =================
 def updateOtherSideConnectors(centerNode) {
     def connected = extractConnectedNodes(centerNode)
     connected.values().flatten().unique().each { other ->
@@ -286,7 +381,6 @@ def updateOtherSideConnectors(centerNode) {
     }
 }
 
-// ================= پردازش گره =================
 def processNode(mode) {
     def node = c.selected
     if (!node) return
@@ -317,13 +411,21 @@ def processNode(mode) {
 // ================= اجرا =================
 try {
     def node = c.selected
-    if (!node || !hasURI(node)) {
-        processNode("One-way")
+    if (!node) return
+    
+    def plainText = extractPlainTextFromNode(node)
+    def hasFreeplaneLink = plainText.contains("freeplane:") || plainText.contains("#")
+    
+    def mode
+    if (hasFreeplaneLink) {
+        mode = showSimpleDialog()
     } else {
-        def mode = showSimpleDialog()
-        if (mode) {
-            processNode(mode)
-        }
+        mode = "One-way"
+    }
+    
+    if (mode) {
+        processNode(mode)
+        ui.showMessage("✅ فقط لینک‌های بعد از '////' پردازش شد", 1)
     }
 } catch (e) {
     ui.showMessage("خطا:\n${e.message}", 0)
