@@ -1,4 +1,4 @@
-// @ExecutionModes({ON_SINGLE_NODE="/menu_bar/link_all"})
+// @ExecutionModes({ON_SINGLE_NODE="/menu_bar/link"})
 // aaa1386 - Two-way + تمام نقشه FINAL
 
 import org.freeplane.core.util.HtmlUtils
@@ -179,3 +179,4 @@ try {
 } catch (e) {
     ui.showMessage("خطا:\n${e.message}", 0)
 }
+
