@@ -1,8 +1,9 @@
 // @ExecutionModes({ON_SINGLE_NODE="/menu_bar/link"})
-// aaa1386 
+// aaa1386 - Single Node - منطق جدید (لینک‌های HTML موجود حذف)
 
 import org.freeplane.core.util.HtmlUtils
 import javax.swing.*
+import static java.util.regex.Pattern.*
 
 def showSimpleDialog() {
     Object[] options = ["One-way", "Two-way"]
@@ -23,11 +24,17 @@ def extractPlainTextFromNode(node) {
         def s = c.indexOf("<body>") + 6
         def e = c.indexOf("</body>")
         if (s > 5 && e > s) {
-            return c.substring(s, e)
-                    .replaceAll("<[^>]+>", "\n")
-                    .replaceAll("&nbsp;", " ")
-                    .replaceAll("\n+", "\n")
-                    .trim()
+            def htmlContent = c.substring(s, e)
+            
+            // ✅ منطق جدید: تمام لینک‌های HTML موجود را کامل حذف کن
+            def plainText = htmlContent
+                .replaceAll(/<a[^>]*>.*?<\/a>/, '')  // لینک‌های HTML حذف
+                .replaceAll("<[^>]+>", "\n")
+                .replaceAll("&nbsp;", " ")
+                .replaceAll("\n+", "\n")
+                .trim()
+            
+            return plainText
         }
     }
     c
@@ -50,17 +57,10 @@ def hasLinks(node) {
     return plainText =~ /https?:\/\/|freeplane:|obsidian:|\[.*https/
 }
 
-// ✅ فیکس: همه لینک‌ها (از جمله Freeplane گره اول) ساخته بشن
-def processAllLinesToHTML(lines, backwardTitle = null) {
+def processAllLinesToHTML(lines, backwardTitle = null, currentNode = null) {
     def result = []
     
     lines.each { line ->
-        // ✅ فیکس اصلی: لینک واقعی دوباره پردازش نشود
-        if (line.contains("<a ") || line.contains("data-link-type")) {
-            result << line
-            return
-        }
-        
         def trimmed = line.trim()
         if (!trimmed) {
             result << line
@@ -99,18 +99,19 @@ def processAllLinesToHTML(lines, backwardTitle = null) {
             def title = (parts.length > 1) ? parts[1]?.trim() : "ابسیدین"
             result << "<div style='margin-bottom:3px;text-align:right;direction:rtl;'>📱 <a data-link-type='text' href='${uri}'>${HtmlUtils.toXMLEscapedText(title)}</a></div>"
         }
-        // Freeplane 🔗 (همیشه!)
+        // Freeplane 🔗
         else if (trimmed.startsWith("freeplane:") || trimmed.contains("#")) {
             def parts = trimmed.split(' ', 2)
             def uri = parts[0] ?: ""
-            def title = backwardTitle ?: ((parts.length > 1) ? parts[1]?.trim() : "لینک")
-            if (uri.contains("#")) {
-                def targetId = uri.substring(uri.lastIndexOf('#')+1)
+            def targetId = uri.contains("#") ? uri.substring(uri.lastIndexOf('#')+1) : null
+            def title = backwardTitle
+            if (!title && targetId && currentNode) {
                 def targetNode = c.find { it.id == targetId }.find()
-                if (targetNode && !backwardTitle) {
+                if (targetNode) {
                     title = getFirstLineFromText(extractPlainTextFromNode(targetNode))
                 }
             }
+            if (!title) title = ((parts.length > 1) ? parts[1]?.trim() : "لینک")
             result << "<div style='margin-bottom:3px;text-align:right;direction:rtl;'>🔗 <a data-link-type='text' href='${uri}'>${HtmlUtils.toXMLEscapedText(title)}</a></div>"
         }
         // متن عادی
@@ -122,13 +123,14 @@ def processAllLinesToHTML(lines, backwardTitle = null) {
     return result
 }
 
-def processNode(mode) {
-    def node = c.selected
+def processNode(node, mode) {
     if (!node) return
     
     def plainText = extractPlainTextFromNode(node)
     
-    // ✅ ۱. Freeplane targets
+    if (!hasLinks(node)) return
+    
+    // ۱. Freeplane targets پیدا کن (فقط Markdown واقعی)
     def freeplaneTargets = []
     plainText.split('\n').each { line ->
         def trimmed = line.trim()
@@ -142,12 +144,12 @@ def processNode(mode) {
         }
     }
     
-    // ✅ ۲. Source: همه لینک‌ها!
+    // ۲. Source: فقط Markdownهای واقعی → HTML
     def sourceLines = plainText.split('\n')
-    def sourceHTML = processAllLinesToHTML(sourceLines)
+    def sourceHTML = processAllLinesToHTML(sourceLines, null, node)
     node.text = "<html><body style='direction:rtl;font-family:Tahoma;'>${sourceHTML.join('\n')}</body></html>"
     
-    // ✅ ۳. Two-way
+    // ۳. Two-way
     if (mode == "Two-way" && !freeplaneTargets.isEmpty()) {
         def sourceId = node.id
         def sourceTitle = getFirstLineFromText(plainText)
@@ -158,7 +160,7 @@ def processNode(mode) {
                 def backwardLine = "#${sourceId} ${sourceTitle}"
                 def targetPlain = extractPlainTextFromNode(targetNode)
                 def targetLines = targetPlain.split('\n') + [backwardLine]
-                def targetHTML = processAllLinesToHTML(targetLines, sourceTitle)
+                def targetHTML = processAllLinesToHTML(targetLines, sourceTitle, targetNode)
                 targetNode.text = "<html><body style='direction:rtl;font-family:Tahoma;'>${targetHTML.join('\n')}</body></html>"
             }
         }
@@ -175,7 +177,7 @@ try {
     def hasFreeplaneLink = plainText.contains("freeplane:") || plainText.contains("#")
 
     def mode = hasFreeplaneLink ? showSimpleDialog() : "One-way"
-    processNode(mode)
+    processNode(node, mode)
 
 } catch (e) {
     ui.showMessage("خطا:\n${e.message}", 0)
