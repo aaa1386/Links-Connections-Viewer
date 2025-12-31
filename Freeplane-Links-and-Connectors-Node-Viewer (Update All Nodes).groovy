@@ -1,13 +1,21 @@
 // @ExecutionModes({ON_SINGLE_NODE="/menu_bar/link"})
-// aaa1386 - Two-way + تمام نقشه FINAL - اصلاح لینک‌های HTML (لینک‌های موجود حفظ نمی‌شوند)
+// aaa1386 - Two-way + تمام نقشه FINAL - اصلاح لینک‌های HTML + نمایش پنل فقط با URI freeplane
 
 import org.freeplane.core.util.HtmlUtils
 import javax.swing.*
 import static java.util.regex.Pattern.*
 
 def showSimpleDialog() {
+    // بررسی وجود URI freeplane در کل نقشه
+    def hasAnyFreeplaneURI = c.find { true }.any { hasFreeplaneURI(it) }
+    
+    if (!hasAnyFreeplaneURI) {
+        ui.showMessage("❌ هیچ URI freeplane در نقشه وجود ندارد.\nپنل لینک‌سازی نمایش داده نمی‌شود.", 1)
+        return null
+    }
+    
     Object[] options = ["One-way", "Two-way"]
-    JOptionPane.showInputDialog(
+    return JOptionPane.showInputDialog(
         ui.frame,
         "لطفا نوع لینک‌سازی را انتخاب کنید:",
         "انتخاب نوع لینک (تمام نقشه)",
@@ -16,6 +24,12 @@ def showSimpleDialog() {
         options,
         options[0]
     )
+}
+
+def hasFreeplaneURI(node) {
+    def plainText = extractPlainTextFromNode(node)
+    // اصلاح regex برای پیدا کردن URI های freeplane (encoded و normal)
+    return plainText =~ /freeplane:/ || plainText =~ /#\w{8,}/
 }
 
 def extractPlainTextFromNode(node) {
@@ -37,7 +51,7 @@ def extractPlainTextFromNode(node) {
             return plainText
         }
     }
-    c
+    return c
 }
 
 def getFirstLineFromText(text) {
@@ -50,11 +64,6 @@ def getSmartTitle(uri) {
     if (parts.size() < 4) return uri + '...'
     def title = parts[0] + '//' + parts[2] + '/'  
     return title + '...'
-}
-
-def hasLinks(node) {
-    def plainText = extractPlainTextFromNode(node)
-    return plainText =~ /https?:\/\/|freeplane:|obsidian:|\[.*https/
 }
 
 def processAllLinesToHTML(lines, backwardTitle = null, currentNode = null) {
@@ -126,9 +135,9 @@ def processAllLinesToHTML(lines, backwardTitle = null, currentNode = null) {
 def processSingleNode(node, mode) {
     def plainText = extractPlainTextFromNode(node)
     
-    if (!hasLinks(node)) return
+    if (!hasFreeplaneURI(node)) return
     
-    // Freeplane targets پیدا کن (فقط از plainText تمیز)
+    // Freeplane targets پیدا کن
     def freeplaneTargets = []
     plainText.split('\n').each { line ->
         def trimmed = line.trim()
@@ -142,7 +151,7 @@ def processSingleNode(node, mode) {
         }
     }
     
-    // HTML کن (فقط Markdownهای واقعی)
+    // HTML کن
     def lines = plainText.split('\n')
     def htmlLines = processAllLinesToHTML(lines, null, node)
     node.text = "<html><body>${htmlLines.join('\n')}</body></html>"
@@ -169,12 +178,12 @@ def processAllMap(mode) {
     def processed = 0
     
     c.find { true }.each { node ->
-        if (hasLinks(node)) {
+        if (hasFreeplaneURI(node)) {
             processSingleNode(node, mode)
             processed++
         }
     }
-    ui.showMessage("✅ ${processed} نود پردازش شد", 1)
+    
 }
 
 try {
