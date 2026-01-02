@@ -1,8 +1,27 @@
 // @ExecutionModes({ON_SINGLE_NODE="/menu_bar/link"})
-// aaa1386 - v7.6.2 FIXED - حفظ کامل لینک‌های HTML ✅
-//آیکن کانکتور  شهودی تر شد
+// aaa1386 - v8.8.0 FIXED - حفظ لینک‌های HTML + تبدیل لینک‌های متنی به HTML ✅
 
 import org.freeplane.core.util.HtmlUtils
+import javax.swing.*
+
+// ================= توابع جدید برای دیالوگ =================
+def showSimpleDialog() {
+    Object[] options = ["One-way", "Two-way"]
+    JOptionPane.showInputDialog(
+        ui.frame,
+        "لطفا نوع لینک‌سازی را انتخاب کنید:",
+        "انتخاب نوع لینک",
+        JOptionPane.QUESTION_MESSAGE,
+        null,
+        options,
+        options[0]
+    )
+}
+
+def hasFreeplaneLink(node) {
+    def plainText = extractPlainTextForProcessing(node)
+    return plainText.contains("freeplane:") || plainText.contains("#")
+}
 
 // ================= توابع کمکی =================
 
@@ -67,39 +86,6 @@ def extractPlainTextForProcessing(node) {
     return text
 }
 
-// 🔥 تابع جدید: بررسی وجود لینک به گره خاص
-def hasLinkToNode(targetNode, sourceNodeId) {
-    def text = targetNode.text ?: ""
-    
-    // بررسی در متن ساده
-    def plainText = extractPlainTextForProcessing(targetNode)
-    if (plainText.contains("#${sourceNodeId}")) {
-        return true
-    }
-    
-    // بررسی در HTML (لینک‌های ساخته شده)
-    if (text.contains("<body>")) {
-        def s = text.indexOf("<body>") + 6
-        def e = text.indexOf("</body>")
-        if (s > 5 && e > s) {
-            def htmlContent = text.substring(s, e)
-            
-            // جستجوی لینک‌های متنی که به sourceNodeId اشاره می‌کنند
-            if (htmlContent.contains("#${sourceNodeId}")) {
-                return true
-            }
-            
-            // جستجوی لینک‌های کانکتوری
-            def pattern = /<a\s+[^>]*data-link-type=['"]connector['"][^>]*href=['"]#${sourceNodeId}['"][^>]*>/
-            if (htmlContent =~ pattern) {
-                return true
-            }
-        }
-    }
-    
-    return false
-}
-
 // 🔥 تابع جدید: استخراج محتوای واقعی گره - نسخه تصحیح شده
 def extractNodeContent(node) {
     def result = []
@@ -121,12 +107,12 @@ def extractNodeContent(node) {
                     if (!trimmed) return
                     
                     // 🔥 اگر خط یک لینک HTML کامل است (با آیکن و تگ <a>)
-                    if (trimmed.matches(/.*<div[^>]*>\s*[🌐📱🔗]\s*<a[^>]*data-link-type=['"]text['"][^>]*>.*?<\/a>\s*<\/div>.*/)) {
+                    if (trimmed.matches(/.*<div[^>]*>\s*[🌐📱🔗↔↗🔙].*<a[^>]*data-link-type=['"]text['"][^>]*>.*?<\/a>\s*<\/div>.*/)) {
                         // لینک HTML رو مستقیماً به نتیجه اضافه کن
                         result << trimmed
                     }
                     // 🔥 اگر فقط لینک <a> است (بدون div)
-                    else if (trimmed.matches(/.*[🌐📱🔗]\s*<a[^>]*data-link-type=['"]text['"][^>]*>.*?<\/a>.*/)) {
+                    else if (trimmed.matches(/.*[🌐📱🔗↔↗🔙].*<a[^>]*data-link-type=['"]text['"][^>]*>.*?<\/a>.*/)) {
                         result << trimmed
                     }
                     // اگر متن ساده است
@@ -179,7 +165,14 @@ def extractNodeContent(node) {
 
 def getFirstLineFromText(text) {
     if (!text) return "لینک"
-    text.split('\n').find { it.trim() && !it.startsWith("freeplane:") && !it.startsWith("obsidian://") }?.trim() ?: "لینک"
+    def lines = text.split('\n')
+    for (line in lines) {
+        def trimmed = line.trim()
+        if (trimmed && !trimmed.startsWith("freeplane:") && !trimmed.startsWith("obsidian://")) {
+            return trimmed
+        }
+    }
+    return "لینک"
 }
 
 def getSmartTitle(uri) {
@@ -332,8 +325,8 @@ def generateNewConnectorsHTML(grouped, existingIds = []) {
     html.join("")
 }
 
-// 🔥 پردازش خطوط با منطق صحیح
-def processLinesToHTML(lines, backwardTitle = null, currentNode = null) {
+// 🔥 پردازش خطوط با منطق صحیح - از کد الگو
+def processLinesToHTML(lines, backwardTitle, currentNode, mode = "One-way") {
     def result = []
     
     lines.each { line ->
@@ -353,11 +346,11 @@ def processLinesToHTML(lines, backwardTitle = null, currentNode = null) {
             return
         }
         
-        // Web 🌐 (متن ساده)
+        // Web 🌐 (متن ساده) - فقط URL
         if (trimmed =~ /^https?:\/\/[^\s]+$/) {
             result << "<div style='margin-bottom: 3px; text-align: right'>🌐 <a data-link-type='text' href='${trimmed}'>${HtmlUtils.toXMLEscapedText(getSmartTitle(trimmed))}</a></div>"
         }
-        // Markdown [text](url) 🌐
+        // Markdown [text](url) 🌐 - از کد الگو
         else if ((trimmed =~ /\[([^\]]*?)\]\s*\(\s*(https?:\/\/[^\)\s]+)\s*\)/)) {
             def mdMatcher = (trimmed =~ /\[([^\]]*?)\]\s*\(\s*(https?:\/\/[^\)\s]+)\s*\)/)
             def title = mdMatcher[0][1].trim()
@@ -365,7 +358,7 @@ def processLinesToHTML(lines, backwardTitle = null, currentNode = null) {
             if (!title || title == uri) title = getSmartTitle(uri)
             result << "<div style='margin-bottom: 3px; text-align: right'>🌐 <a data-link-type='text' href='${uri}'>${HtmlUtils.toXMLEscapedText(title)}</a></div>"
         }
-        // URL + Title 🌐 (متن ساده)
+        // URL + Title 🌐 (متن ساده) - از کد الگو
         else if ((trimmed =~ /(https?:\/\/[^\s]+)\s+(.+)/)) {
             def urlTitleMatcher = (trimmed =~ /(https?:\/\/[^\s]+)\s+(.+)/)
             def uri = urlTitleMatcher[0][1].trim()
@@ -379,20 +372,43 @@ def processLinesToHTML(lines, backwardTitle = null, currentNode = null) {
             def title = (parts.length > 1) ? parts[1]?.trim() : "ابسیدین"
             result << "<div style='margin-bottom: 3px; text-align: right'>📱 <a data-link-type='text' href='${uri}'>${HtmlUtils.toXMLEscapedText(title)}</a></div>"
         }
-        // Freeplane 🔗 (متن ساده)
+        // Freeplane 🔗 (متن ساده) - با پشتیبانی از mode
         else if (trimmed.startsWith("freeplane:") || (trimmed.contains("#") && !trimmed.startsWith("obsidian://"))) {
             def parts = trimmed.split(' ', 2)
             def uri = parts[0] ?: ""
-            def title = backwardTitle
-            if (!title && uri.contains("#") && currentNode) {
-                def targetId = uri.substring(uri.lastIndexOf('#')+1)
-                def targetNode = c.find { it.id == targetId }.find()
-                if (targetNode) {
-                    title = getFirstLineFromText(extractPlainTextForProcessing(targetNode))
+            def title
+            
+            // 🔥 KEY FIX: اگر backwardTitle وجود دارد (یعنی این یک لینک برگشتی است)
+            if (backwardTitle) {
+                title = backwardTitle
+            } else {
+                // لینک مستقیم - عنوان را از گره مقصد بگیر
+                if (uri.contains("#")) {
+                    def targetId = uri.substring(uri.lastIndexOf('#')+1)
+                    def targetNode = c.find { it.id == targetId }.find()
+                    if (targetNode) {
+                        title = getFirstLineFromText(extractPlainTextForProcessing(targetNode))
+                    }
+                }
+                if (!title) title = ((parts.length > 1) ? parts[1]?.trim() : "لینک")
+            }
+            
+            // انتخاب آیکن بر اساس mode
+            def icon
+            if (mode == "Two-way") {
+                icon = "🔗↔️ "
+            } else {
+                // حالت One-way
+                if (backwardTitle) {
+                    // این یک لینک بازگشتی است
+                    icon = "🔗🔙 "
+                } else {
+                    // لینک مستقیم از مبدا به مقصد
+                    icon = "🔗↗️ "
                 }
             }
-            if (!title) title = ((parts.length > 1) ? parts[1]?.trim() : "لینک")
-            result << "<div style='margin-bottom: 3px; text-align: right'>🔗 <a data-link-type='text' href='${uri}'>${HtmlUtils.toXMLEscapedText(title)}</a></div>"
+            
+            result << "<div style='margin-bottom: 3px; text-align: right'>${icon}<a data-link-type='text' href='${uri}'>${HtmlUtils.toXMLEscapedText(title)}</a></div>"
         }
         // متن عادی (نه لینک)
         else {
@@ -459,27 +475,49 @@ def removeConnectorFromHTML(nodeText, sourceId) {
     }
 }
 
-// 🔥 ساخت backward link در گره مقصد - فقط اگر وجود نداشته باشد
-def createBackwardTextLinkIfNeeded(targetNode, sourceNode, sourceFreeplaneUri) {
+// 🔥 ساخت backward link در گره مقصد - نسخه جدید: همیشه ایجاد کن!
+def createBackwardTextLinkIfNeeded(targetNode, sourceNode, sourceFreeplaneUri, mode) {
     def sourceId = sourceNode.id
     
-    // بررسی کن که آیا در گره مقصد از قبل لینکی به گره مبدا وجود دارد
-    if (hasLinkToNode(targetNode, sourceId)) {
-        // لینک از قبل وجود دارد - کاری نکن
+    // 🔥 همیشه backward link ایجاد کن (حتی اگر از قبل وجود داشته باشد)
+    // فقط بررسی کن که duplicate نباشد
+    def sourceTitle = getFirstLineFromText(extractPlainTextForProcessing(sourceNode))
+    println "🔗 ساخت backward link: ${targetNode.id} ← ${sourceId} با عنوان: ${sourceTitle}"
+    
+    // 🔥 استخراج محتوای فعلی گره مقصد
+    def targetContentLines = extractNodeContent(targetNode)
+    
+    // 🔥 بررسی کن که آیا لینک مشابه از قبل وجود دارد
+    def existingLink = false
+    def targetFreeplaneUri = "freeplane:" + sourceFreeplaneUri
+    
+    targetContentLines.each { line ->
+        def trimmed = line.trim()
+        if (trimmed.startsWith(targetFreeplaneUri) || trimmed.contains("#${sourceId}")) {
+            println "⚠️ لینک مشابه از قبل وجود دارد: ${line}"
+            existingLink = true
+        }
+    }
+    
+    // 🔥 اگر لینک مشابه وجود ندارد، اضافه کن
+    if (!existingLink) {
+        // ساخت لینک جدید
+        def newLine = targetFreeplaneUri
+        if (sourceTitle && sourceTitle != "لینک") {
+            newLine = "${targetFreeplaneUri} ${sourceTitle}"
+        }
+        
+        targetContentLines = targetContentLines + [newLine]
+        println "✅ اضافه کردن لینک جدید: ${newLine}"
+    } else {
+        println "⏭️ از ساخت لینک تکراری صرف نظر شد"
         return false
     }
     
-    // لینک وجود ندارد - بساز
-    def sourceTitle = getFirstLineFromText(extractPlainTextForProcessing(sourceNode))
-
-    // اضافه کردن backward link به انتهای متن target
-    def targetPlain = extractPlainTextForProcessing(targetNode)
-    def targetLines = targetPlain.split('\n')
-    targetLines = targetLines + ["freeplane:${sourceFreeplaneUri} ${sourceTitle}"]
+    // 🔥 پردازش خطوط به HTML
+    def targetHTML = processLinesToHTML(targetContentLines, sourceTitle, targetNode, mode)
     
-    def targetHTML = processLinesToHTML(targetLines, sourceTitle, targetNode)
-    
-    // فقط کانکتورهای جدید را اضافه کن
+    // اضافه کردن کانکتورها
     def existingConnectorIds = extractConnectedNodeIdsFromText(targetNode)
     def connectors = extractConnectedNodes(targetNode)
     def connectorsHTML = generateNewConnectorsHTML(connectors, existingConnectorIds)
@@ -490,11 +528,12 @@ def createBackwardTextLinkIfNeeded(targetNode, sourceNode, sourceFreeplaneUri) {
     }
     
     targetNode.text = "<html><body>${finalHTML}</body></html>"
+    println "✅ backward link با موفقیت ایجاد/به‌روزرسانی شد"
     return true
 }
 
 // 🔥 آپدیت همسایه‌ها - نسخه بهبود یافته
-def updateOtherSideConnectors(centerNode) {
+def updateOtherSideConnectors(centerNode, mode) {
     def connected = extractConnectedNodes(centerNode)
     connected.values().flatten().unique().each { other ->
         def proxy = asProxy(other)
@@ -508,7 +547,7 @@ def updateOtherSideConnectors(centerNode) {
         def connectorsHTML = generateNewConnectorsHTML(extractConnectedNodes(proxy), existingConnectorIds)
         
         // 🔥 KEY FIX: اگر کانکتور جدید نیست → باز هم HTML اصلی را بساز (برای حفظ کانکتورهای موجود)
-        def htmlLines = processLinesToHTML(contentLines, null, proxy)
+        def htmlLines = processLinesToHTML(contentLines, null, proxy, mode)
         
         def finalHTML = htmlLines.join('\n')
         
@@ -525,7 +564,7 @@ def updateOtherSideConnectors(centerNode) {
 }
 
 // 🔢 تابع جدید: حذف کانکتور از همه گره‌های متصل
-def removeConnectorFromAllConnectedNodes(centerNode, targetNode) {
+def removeConnectorFromAllConnectedNodes(centerNode, targetNode, mode) {
     def centerId = centerNode.id
     
     // 🔥 1. حذف از گره هدف
@@ -536,7 +575,7 @@ def removeConnectorFromAllConnectedNodes(centerNode, targetNode) {
             targetNode.text = cleanedText
             // بعد از حذف، گره هدف را بازسازی کن
             def targetContentLines = extractNodeContent(targetNode)
-            def targetHtmlLines = processLinesToHTML(targetContentLines, null, targetNode)
+            def targetHtmlLines = processLinesToHTML(targetContentLines, null, targetNode, mode)
             def targetConnectors = extractConnectedNodes(targetNode)
             def targetConnectorsHTML = generateAllConnectorsHTML(targetConnectors)
             
@@ -558,7 +597,7 @@ def removeConnectorFromAllConnectedNodes(centerNode, targetNode) {
                 other.text = cleanedText
                 // 🔥 بازسازی گره برای حذف متن کانکتور
                 def otherContentLines = extractNodeContent(other)
-                def otherHtmlLines = processLinesToHTML(otherContentLines, null, other)
+                def otherHtmlLines = processLinesToHTML(otherContentLines, null, other, mode)
                 def otherConnectors = extractConnectedNodes(other)
                 def otherConnectorsHTML = generateAllConnectorsHTML(otherConnectors)
                 
@@ -572,10 +611,31 @@ def removeConnectorFromAllConnectedNodes(centerNode, targetNode) {
     }
 }
 
-// 🔥 تابع اصلی پردازش - الگوی جدید
-def processNode() {
+// 🔥 تابع جدید: استخراج لینک‌های Freeplane از محتوای گره
+def extractFreeplaneLinksFromContent(contentLines) {
+    def freeplaneUris = []
+    
+    contentLines.each { line ->
+        def trimmed = line.trim()
+        // 🔥 فقط خطوطی که با freeplane: شروع می‌شوند یا حاوی # هستند (و obsidian نیستند)
+        if (trimmed.startsWith("freeplane:") || (trimmed.contains("#") && !trimmed.startsWith("obsidian://"))) {
+            def parts = trimmed.split(' ', 2)
+            if (parts[0]) {
+                freeplaneUris << parts[0]
+                println "📌 یافت لینک Freeplane: ${parts[0]}"
+            }
+        }
+    }
+    
+    return freeplaneUris
+}
+
+// 🔥 تابع اصلی پردازش - نسخه اصلاح شده
+def processNode(mode) {
     def node = c.selected
     if (!node) return
+
+    println "🚀 شروع پردازش گره: ${node.id} - حالت: ${mode}"
 
     // 1. کانکتورهای قبلی را ذخیره کن
     def previousConnectorIds = extractConnectedNodeIdsFromText(node)
@@ -589,9 +649,11 @@ def processNode() {
 
     // 2. محتوای واقعی گره را استخراج کن
     def contentLines = extractNodeContent(node)
+    println "📄 محتوای استخراج شده (${contentLines.size()} خط):"
+    contentLines.eachWithIndex { line, idx -> println "  ${idx}: ${line}" }
     
     // 3. خطوط را پردازش کن (فقط لینک‌های جدید HTML می‌شوند)
-    def processedLines = processLinesToHTML(contentLines, null, node)
+    def processedLines = processLinesToHTML(contentLines, null, node, mode)
     
     // 4. همه کانکتورهای فعلی را بساز
     def connectors = extractConnectedNodes(node)
@@ -621,32 +683,37 @@ def processNode() {
     }
     
     node.text = "<html><body>${finalHTML}</body></html>"
+    println "✅ گره ${node.id} پردازش شد"
 
-    // 7. دوطرفه: برای هر freeplane link، backward link بساز
-    def plainText = extractPlainTextForProcessing(node)
-    def freeplaneUris = []
-    plainText.split('\n').each { line ->
-        def trimmed = line.trim()
-        if (trimmed.startsWith("freeplane:") || trimmed.contains("#")) {
-            def parts = trimmed.split(' ', 2)
-            freeplaneUris << parts[0]
-        }
-    }
-
+    // 7. 🔥 KEY FIX: استخراج لینک‌های Freeplane از contentLines اصلی
+    def freeplaneUris = extractFreeplaneLinksFromContent(contentLines)
+    println "🔍 یافتن ${freeplaneUris.size()} لینک Freeplane در گره ${node.id}"
+    
+    // 8. 🔥 ساخت backward link برای هر لینک Freeplane
+    println "🔄 ساخت backward link‌ها (در هر دو حالت)"
     freeplaneUris.each { uri ->
         if (uri.contains("#")) {
             def targetId = uri.substring(uri.lastIndexOf('#') + 1)
+            println "  🔍 جستجوی گره مقصد با ID: ${targetId}"
             def targetNode = c.find { it.id == targetId }.find()
             if (targetNode && targetNode != node) {
-                createBackwardTextLinkIfNeeded(targetNode, node, uri)
+                println "  ✅ گره مقصد یافت شد: ${targetNode.id}"
+                def created = createBackwardTextLinkIfNeeded(targetNode, node, uri, mode)
+                if (created) {
+                    println "  ✅ backward link با موفقیت ایجاد شد"
+                } else {
+                    println "  ⚠️ backward link از قبل وجود داشت یا ایجاد نشد"
+                }
+            } else {
+                println "  ❌ گره مقصد یافت نشد یا همان گره مبدا است"
             }
         }
     }
 
-    // 8. آپدیت همسایه‌ها
-    updateOtherSideConnectors(node)
+    // 9. آپدیت همسایه‌ها
+    updateOtherSideConnectors(node, mode)
     
-    // 9. حذف کانکتورهای حذف شده
+    // 10. حذف کانکتورهای حذف شده
     def currentConnected = []
     currentConnected.addAll(connectors['ورودی'] ?: [])
     currentConnected.addAll(connectors['خروجی'] ?: [])
@@ -654,17 +721,39 @@ def processNode() {
     
     def removedConnections = previouslyConnectedNodes.findAll { !currentConnected.contains(it) }
     removedConnections.each { oldConnectedNode ->
-        removeConnectorFromAllConnectedNodes(node, oldConnectedNode)
+        removeConnectorFromAllConnectedNodes(node, oldConnectedNode, mode)
     }
 }
 
 // ================= اجرا =================
 try {
     def node = c.selected
-    if (!node) return
+    if (!node) {
+        ui.showMessage("لطفاً روی یک گره کلیک کنید", 0)
+        return
+    }
     
-    processNode()
-    ui.showMessage("✅ v7.6.2 FIXED - حفظ کامل لینک‌های HTML ✅", 1)
+    println "📍 گره انتخاب شده: ${node.id}"
+    
+    def mode
+    if (hasFreeplaneLink(node)) {
+        def selectedMode = showSimpleDialog()
+        if (selectedMode == null) {
+            // کاربر Cancel زد
+            println "❌ کاربر Cancel را زد"
+            return
+        }
+        mode = selectedMode
+        println "🎯 حالت انتخاب شده: ${mode}"
+    } else {
+        mode = "One-way"
+        println "🎯 حالت پیش‌فرض: ${mode}"
+    }
+    
+    processNode(mode)
+    ui.showMessage("✅ v8.8.0 FIXED - حفظ لینک‌های HTML + تبدیل لینک‌های متنی به HTML ✅", 1)
 } catch (e) {
+    println "❌ خطا: ${e.message}"
+    e.printStackTrace()
     ui.showMessage("خطا:\n${e.message}", 0)
 }
