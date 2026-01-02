@@ -1,5 +1,6 @@
 // @ExecutionModes({ON_SINGLE_NODE="/menu_bar/link"})
 // aaa1386 - v7.6.2 FIXED - حفظ کامل لینک‌های HTML ✅
+//آیکن کانکتور  شهودی تر شد
 
 import org.freeplane.core.util.HtmlUtils
 
@@ -17,7 +18,7 @@ def extractPlainTextForProcessing(node) {
             // فقط لینک‌های کانکتوری (با آیکن فلش) را حذف کن
             // لینک‌های متنی (🌐📱🔗) را حفظ کن
             def processed = htmlContent.replaceAll(
-                /<div style=['"]margin-bottom: 3px; text-align: right['"]>[\s\n]*[↙↗↔]️?[\s\n]*<a[^>]*data-link-type=['"]connector['"][^>]*>.*?<\/a>[\s\n]*<\/div>/,
+                /<div style=['"]margin-bottom: 3px; text-align: right['"]>[\s\n]*(?:[↗↔]️?|\| 🔙)[\s\n]*<a[^>]*data-link-type=['"]connector['"][^>]*>.*?<\/a>[\s\n]*<\/div>/,
                 ''
             )
             
@@ -143,7 +144,7 @@ def extractNodeContent(node) {
                             !plainText.startsWith("def ") &&
                             !plainText.startsWith("try {") &&
                             !plainText.startsWith("catch ") &&
-                            !plainText.matches(/^[↙↗↔]️?\s*.+$/)) {
+                            !plainText.matches(/^(?:[↗↔]️?|\| 🔙)\s*.+$/)) {
                             result << plainText
                         }
                     }
@@ -167,7 +168,7 @@ def extractNodeContent(node) {
                 !it.startsWith("try {") &&
                 !it.startsWith("catch ") &&
                 // 🔥 خطوطی که فقط آیکن کانکتور هستند را حذف کن
-                !it.matches(/^[↙↗↔]️?\s*.+$/)
+                !it.matches(/^(?:[↗↔]️?|\| 🔙)\s*.+$/)
             }
     }
     
@@ -290,7 +291,7 @@ def generateAllConnectorsHTML(grouped) {
         def nodes = grouped[type]
         if (nodes && !nodes.isEmpty()) {
             def icon = 
-                (type == 'ورودی')   ? '↙️ ' :
+                (type == 'ورودی')   ? '| 🔙 ' :
                 (type == 'خروجی')   ? '↗️ ' :
                                       '↔️ '
             nodes.each { n ->
@@ -317,7 +318,7 @@ def generateNewConnectorsHTML(grouped, existingIds = []) {
         def nodes = grouped[type]
         if (nodes && !nodes.isEmpty()) {
             def icon = 
-                (type == 'ورودی')   ? '↙️ ' :
+                (type == 'ورودی')   ? '| 🔙 ' :
                 (type == 'خروجی')   ? '↗️ ' :
                                       '↔️ '
             nodes.each { n ->
@@ -396,7 +397,7 @@ def processLinesToHTML(lines, backwardTitle = null, currentNode = null) {
         // متن عادی (نه لینک)
         else {
             // 🔥 فقط متن ساده (با escaping)
-            if (!trimmed.matches(/^[↙↗↔]️?\s*.+$/)) {
+            if (!trimmed.matches(/^(?:[↗↔]️?|\| 🔙)\s*.+$/)) {
                 result << HtmlUtils.toXMLEscapedText(trimmed)
             }
         }
@@ -448,7 +449,7 @@ def removeConnectorFromHTML(nodeText, sourceId) {
         def after = nodeText.substring(e)
         
         // حذف دقیق کانکتور مورد نظر
-        def connectorPattern = /<div style=['"]margin-bottom: 3px; text-align: right['"]>[\s\n]*[↙↗↔]️?[\s\n]*<a[^>]*data-link-type=['"]connector['"][^>]*href=['"]#${sourceId}['"][^>]*>.*?<\/a>[\s\n]*<\/div>/
+        def connectorPattern = /<div style=['"]margin-bottom: 3px; text-align: right['"]>[\s\n]*(?:[↗↔]️?|\| 🔙)[\s\n]*<a[^>]*data-link-type=['"]connector['"][^>]*href=['"]#${sourceId}['"][^>]*>.*?<\/a>[\s\n]*<\/div>/
         def newHtmlContent = htmlContent.replaceAll(connectorPattern, '')
         
         return before + newHtmlContent + after
