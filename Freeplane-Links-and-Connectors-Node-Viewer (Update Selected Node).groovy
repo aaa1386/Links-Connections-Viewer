@@ -1,5 +1,5 @@
 // @ExecutionModes({ON_SINGLE_NODE="/menu_bar/link"})
-// aaa1386 - v8.9.1 FIXED - حفظ لینک‌های HTML + تبدیل لینک‌های متنی به HTML + به‌روزرسانی خودکار عنوان لینک‌ها ✅
+// aaa1386 - v8.9.2 FIXED - حفظ لینک‌های HTML + تبدیل لینک‌های متنی به HTML + استثنای @ در عنوان لینک‌ها ✅
 
 import org.freeplane.core.util.HtmlUtils
 import javax.swing.*
@@ -20,7 +20,7 @@ def showSimpleDialog() {
 
 def hasFreeplaneLink(node) {
     def plainText = extractPlainTextForProcessing(node)
-    return plainText.contains("freeplane:") || plainText.contains("#")
+    return plainText.contains("freeplane:")
 }
 
 // ================= توابع کمکی =================
@@ -184,14 +184,20 @@ def getSmartTitle(uri) {
     return "${protocol}${slashes}${domain}/..."
 }
 
-def getTargetNodeTitle(freeplaneUri) {
+// 🔥 تابع بهبود یافته: اگر عنوان با @ شروع شود، تغییر نکند
+def getTargetNodeTitle(freeplaneUri, currentTitle = null) {
     if (!freeplaneUri?.contains("#")) return "لینک"
     
     def targetId = freeplaneUri.substring(freeplaneUri.lastIndexOf('#') + 1)
     def targetNode = c.find { it.id == targetId }.find()
     
     if (targetNode) {
-        return getFirstLineFromText(extractPlainTextForProcessing(targetNode))
+        def newTitle = getFirstLineFromText(extractPlainTextForProcessing(targetNode))
+        // 🔥 اگر عنوان فعلی با @ شروع می‌شود، تغییرش نده
+        if (currentTitle?.startsWith('@')) {
+            return currentTitle
+        }
+        return newTitle
     }
     return "لینک"
 }
@@ -384,7 +390,7 @@ def processLinesToHTML(lines, backwardTitle, currentNode, mode = "One-way") {
             result << "<div style='margin-bottom: 3px; text-align: right'>📱 <a data-link-type='text' href='${uri}'>${HtmlUtils.toXMLEscapedText(title)}</a></div>"
         }
         // Freeplane 🔗 (متن ساده) - با پشتیبانی از mode
-        else if (trimmed.startsWith("freeplane:") || (trimmed.contains("#") && !trimmed.startsWith("obsidian://"))) {
+        else if (trimmed.startsWith("freeplane:")) {
             def parts = trimmed.split(' ', 2)
             def uri = parts[0] ?: ""
             def title
@@ -394,14 +400,7 @@ def processLinesToHTML(lines, backwardTitle, currentNode, mode = "One-way") {
                 title = backwardTitle
             } else {
                 // لینک مستقیم - عنوان را از گره مقصد بگیر
-                if (uri.contains("#")) {
-                    def targetId = uri.substring(uri.lastIndexOf('#')+1)
-                    def targetNode = c.find { it.id == targetId }.find()
-                    if (targetNode) {
-                        title = getFirstLineFromText(extractPlainTextForProcessing(targetNode))
-                    }
-                }
-                if (!title) title = ((parts.length > 1) ? parts[1]?.trim() : "لینک")
+                title = getTargetNodeTitle(uri, parts.length > 1 ? parts[1]?.trim() : null)
             }
             
             // انتخاب آیکن بر اساس mode
@@ -507,7 +506,7 @@ def createBackwardTextLinkIfNeeded(targetNode, sourceNode, sourceFreeplaneUri, m
     
     targetContentLines.each { line ->
         def trimmed = line.trim()
-        if (trimmed.startsWith(targetFreeplaneUri) || trimmed.contains("#${sourceId}")) {
+        if (trimmed.startsWith(targetFreeplaneUri)) {
             println "⚠️ لینک مشابه از قبل وجود دارد: ${line}"
             existingLink = true
         }
@@ -631,8 +630,8 @@ def extractFreeplaneLinksFromContent(contentLines) {
     
     contentLines.each { line ->
         def trimmed = line.trim()
-        // 🔥 فقط خطوطی که با freeplane: شروع می‌شوند یا حاوی # هستند (و obsidian نیستند)
-        if (trimmed.startsWith("freeplane:") || (trimmed.contains("#") && !trimmed.startsWith("obsidian://"))) {
+        // 🔥 فقط خطوطی که با freeplane: شروع می‌شوند
+        if (trimmed.startsWith("freeplane:")) {
             def parts = trimmed.split(' ', 2)
             if (parts[0]) {
                 freeplaneUris << parts[0]
@@ -644,7 +643,7 @@ def extractFreeplaneLinksFromContent(contentLines) {
     return freeplaneUris
 }
 
-// 🔥 تابع جدید: به‌روزرسانی عنوان لینک‌های Freeplane و Connector در کل نقشه
+// 🔥 تابع جدید: به‌روزرسانی عنوان لینک‌های Freeplane و Connector در کل نقشه - با استثنای @
 def updateAllLinkTitlesInMap() {
     println "🔄 شروع به‌روزرسانی عنوان لینک‌ها در کل نقشه"
     
@@ -653,8 +652,8 @@ def updateAllLinkTitlesInMap() {
         def freeplaneLinks = []
         def connectorLinks = []
         
-        // الگوی لینک Freeplane (شامل freeplane: و #)
-        def freeplanePattern = /<a\s+[^>]*href=['"](freeplane:[^'"]*|#[^'"]*)['"][^>]*>([^<]*)<\/a>/
+        // الگوی لینک Freeplane (فقط freeplane:)
+        def freeplanePattern = /<a\s+[^>]*href=['"](freeplane:[^'"]*)['"][^>]*>([^<]*)<\/a>/
         def freeplaneMatcher = (html =~ freeplanePattern)
         freeplaneMatcher.each { match ->
             def uri = match[1]
@@ -674,10 +673,11 @@ def updateAllLinkTitlesInMap() {
         return [freeplaneLinks, connectorLinks]
     }
     
-    // تابع کمکی برای به‌روزرسانی لینک در HTML
+    // تابع کمکی برای به‌روزرسانی لینک در HTML - با استثنای @
     def updateLinkInHTML = { html, uri, oldTitle, newTitle ->
-        // اگر عنوان قدیمی با "@" شروع شود، به‌روز نمی‌کنیم
-        if (oldTitle.startsWith('@')) {
+        // 🔥 اگر عنوان قدیمی با "@" شروع شود یا در ابتدای لینک باشد، به‌روز نمی‌کنیم
+        if (oldTitle.startsWith('@') || oldTitle.contains(' @')) {
+            println "⏭️ استثنا: عنوان با @ تغییر نمی‌کند: ${oldTitle}"
             return html
         }
         
@@ -689,7 +689,7 @@ def updateAllLinkTitlesInMap() {
         def pattern = /<a\s+([^>]*href=['"]${escapedUri}['"][^>]*)>${escapedOldTitle}<\/a>/
         
         // جایگزینی
-        def newHtml = html.replaceAll(pattern, "<a \$1>${newTitle}</a>")
+        def newHtml = html.replaceAll(pattern, "<a \$1>${HtmlUtils.toXMLEscapedText(newTitle)}</a>")
         
         return newHtml
     }
@@ -713,10 +713,7 @@ def updateAllLinkTitlesInMap() {
                 
                 // استخراج targetId از uri
                 def targetId = null
-                if (uri.startsWith("#")) {
-                    targetId = uri.substring(1)
-                } else if (uri.startsWith("freeplane:")) {
-                    // فرض می‌کنیم freeplane:#ID
+                if (uri.startsWith("freeplane:")) {
                     def hashIndex = uri.lastIndexOf('#')
                     if (hashIndex != -1) {
                         targetId = uri.substring(hashIndex + 1)
@@ -766,9 +763,7 @@ def updateAllLinkTitlesInMap() {
                 def oldTitle = link.title
                 
                 def targetId = null
-                if (uri.startsWith("#")) {
-                    targetId = uri.substring(1)
-                } else if (uri.startsWith("freeplane:")) {
+                if (uri.startsWith("freeplane:")) {
                     def hashIndex = uri.lastIndexOf('#')
                     if (hashIndex != -1) {
                         targetId = uri.substring(hashIndex + 1)
@@ -936,7 +931,7 @@ try {
     }
     
     processNode(mode)
-    ui.showMessage("✅ v8.9.1 FIXED - حفظ لینک‌های HTML + تبدیل لینک‌های متنی به HTML + به‌روزرسانی خودکار عنوان لینک‌ها ✅", 1)
+    ui.showMessage("✅ v8.9.2 FIXED - حفظ لینک‌های HTML + استثنای @ در عنوان لینک‌ها ✅", 1)
 } catch (e) {
     println "❌ خطا: ${e.message}"
     e.printStackTrace()
