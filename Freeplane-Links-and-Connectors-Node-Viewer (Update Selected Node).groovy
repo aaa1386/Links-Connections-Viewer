@@ -1,5 +1,5 @@
 // @ExecutionModes({ON_SINGLE_NODE="/menu_bar/link"})
-// aaa1386 - v8.9.2 FIXED - حفظ لینک‌های HTML + تبدیل لینک‌های متنی به HTML + استثنای @ در عنوان لینک‌ها ✅
+// aaa1386 - v9.3.0 FIXED - اصلاح کامل backward link برای لینک‌دهی صحیح ✅
 
 import org.freeplane.core.util.HtmlUtils
 import javax.swing.*
@@ -86,7 +86,7 @@ def extractPlainTextForProcessing(node) {
     return text
 }
 
-// 🔥 تابع جدید: استخراج محتوای واقعی گره - نسخه تصحیح شده
+// 🔥 تابع جدید: استخراج محتوای واقعی گره - نسخه بهبود یافته
 def extractNodeContent(node) {
     def result = []
     def text = node.text ?: ""
@@ -99,19 +99,30 @@ def extractNodeContent(node) {
             if (s > 5 && e > s) {
                 def htmlContent = text.substring(s, e)
                 
-                // 🔥 KEY FIX: تشخیص لینک‌های HTML موجود
+                // 🔥 KEY FIX: تشخیص و حفظ کامل لینک‌های HTML
                 // الگوی regex برای تشخیص لینک‌های HTML کامل
-                def linkPattern = /<div[^>]*>\s*[🌐📱🔗↔↗🔙][^<]*<a[^>]*data-link-type=['"]text['"][^>]*>[^<]*<\/a>\s*<\/div>/
+                def linkPattern = /<div[^>]*>\s*[^<]*<a[^>]*>[^<]*<\/a>\s*<\/div>/
                 
                 // استخراج همه لینک‌های HTML
                 def matcher = (htmlContent =~ /(?s)${linkPattern}/)
                 def links = []
                 matcher.each { link ->
-                    links << link.trim()
+                    def linkStr = link.trim()
+                    // 🔥 فقط لینک‌های غیرکانکتوری را حفظ کن
+                    if (!linkStr.contains("data-link-type='connector'") && !linkStr.contains('data-link-type="connector"')) {
+                        links << linkStr
+                    }
                 }
                 
                 // حذف لینک‌ها از htmlContent برای پردازش بقیه متن
-                def remainingContent = htmlContent.replaceAll(/(?s)${linkPattern}/, '')
+                def remainingContent = htmlContent
+                links.each { link ->
+                    remainingContent = remainingContent.replace(link, '')
+                }
+                
+                // همچنین لینک‌های کانکتوری را حذف کن
+                def connectorPattern = /<div[^>]*>\s*(?:[↗↔]️?|\| 🔙)\s*<a[^>]*data-link-type=['"]connector['"][^>]*>.*?<\/a>\s*<\/div>/
+                remainingContent = remainingContent.replaceAll(connectorPattern, '')
                 
                 // پردازش باقی مانده متن
                 remainingContent.split('\n').each { line ->
@@ -128,7 +139,7 @@ def extractNodeContent(node) {
                     }
                 }
                 
-                // اضافه کردن لینک‌های HTML حفظ شده
+                // اضافه کردن لینک‌های HTML حفظ شده (فقط غیرکانکتوری)
                 links.each { link ->
                     result << link
                 }
@@ -151,7 +162,6 @@ def extractNodeContent(node) {
                 !it.startsWith("def ") &&
                 !it.startsWith("try {") &&
                 !it.startsWith("catch ") &&
-                // 🔥 خطوطی که فقط آیکن کانکتور هستند را حذف کن
                 !it.matches(/^(?:[↗↔]️?|\| 🔙)\s*.+$/)
             }
     }
@@ -329,16 +339,7 @@ def generateNewConnectorsHTML(grouped, existingIds = []) {
     html.join("")
 }
 
-// 🔥 تابع کمکی: بررسی آیا خط از قبل HTML معتبر است
-def isValidHtmlLink(line) {
-    if (!line) return false
-    
-    // بررسی ساختار کلی
-    def pattern = /<div[^>]*>\s*([🌐📱🔗↔↗🔙]+\s*)?<a\s+[^>]*href=['"][^'"]+['"][^>]*>[^<]*<\/a>\s*<\/div>/
-    return line.matches(/(?s).*${pattern}.*/)
-}
-
-// 🔥 پردازش خطوط با منطق صحیح - از کد الگو
+// 🔥 پردازش خطوط با منطق صحیح - نسخه اصلاح شده که لینک‌های کانکتوری را تکرار نمی‌کند
 def processLinesToHTML(lines, backwardTitle, currentNode, mode = "One-way") {
     def result = []
     
@@ -346,19 +347,23 @@ def processLinesToHTML(lines, backwardTitle, currentNode, mode = "One-way") {
         def trimmed = line.trim()
         if (!trimmed) return
         
-        // 🔥 KEY FIX: اگر خط از قبل یک لینک HTML کامل است (با div wrapper)، تغییرش نده
-        if (trimmed.startsWith('<div') && trimmed.contains('data-link-type="text"') && trimmed.endsWith('</div>')) {
-            // بررسی کن که آیا لینک معتبر است
-            if (trimmed.contains('href=') && trimmed.contains('</a>')) {
-                result << trimmed
-                return
-            }
+        // 🔥 CRITICAL FIX: اگر خط از قبل یک لینک کانکتوری است، آن را پردازش نکن
+        if (trimmed.contains("data-link-type='connector'") || trimmed.contains('data-link-type="connector"')) {
+            // این یک لینک کانکتوری است، آن را نادیده بگیر (بعداً در generateAllConnectorsHTML ساخته می‌شود)
+            println "⏭️ نادیده گرفتن لینک کانکتوری موجود: ${trimmed.take(50)}..."
+            return
         }
         
-        // 🔥 اگر خط فقط لینک <a> است (بدون div wrapper)
-        if (trimmed.startsWith('🌐 <a') || trimmed.startsWith('📱 <a') || trimmed.startsWith('🔗 <a') || 
-            trimmed.startsWith('🔗↗️ <a') || trimmed.startsWith('🔗↔️ <a') || trimmed.startsWith('🔗🔙 <a')) {
-            // به صورت div-wrap شده برگردون
+        // 🔥 CRITICAL FIX: اگر خط از قبل یک لینک HTML کامل است، آن را بدون تغییر حفظ کن
+        if (trimmed.startsWith('<div') && trimmed.contains('<a') && trimmed.contains('href=') && trimmed.endsWith('</div>')) {
+            // این یک لینک HTML از قبل فرمت شده است، بدون تغییر اضافه کن
+            result << trimmed
+            return
+        }
+        
+        // 🔥 همچنین اگر خط فقط تگ <a> دارد (بدون div wrapper)
+        if (trimmed.startsWith('<a') && trimmed.contains('href=') && trimmed.endsWith('</a>')) {
+            // آن را در div بپیچان اما محتوای آن را تغییر نده
             result << "<div style='margin-bottom: 3px; text-align: right'>${trimmed}</div>"
             return
         }
@@ -367,7 +372,7 @@ def processLinesToHTML(lines, backwardTitle, currentNode, mode = "One-way") {
         if (trimmed =~ /^https?:\/\/[^\s]+$/) {
             result << "<div style='margin-bottom: 3px; text-align: right'>🌐 <a data-link-type='text' href='${trimmed}'>${HtmlUtils.toXMLEscapedText(getSmartTitle(trimmed))}</a></div>"
         }
-        // Markdown [text](url) 🌐 - از کد الگو
+        // Markdown [text](url) 🌐
         else if ((trimmed =~ /\[([^\]]*?)\]\s*\(\s*(https?:\/\/[^\)\s]+)\s*\)/)) {
             def mdMatcher = (trimmed =~ /\[([^\]]*?)\]\s*\(\s*(https?:\/\/[^\)\s]+)\s*\)/)
             def title = mdMatcher[0][1].trim()
@@ -375,7 +380,7 @@ def processLinesToHTML(lines, backwardTitle, currentNode, mode = "One-way") {
             if (!title || title == uri) title = getSmartTitle(uri)
             result << "<div style='margin-bottom: 3px; text-align: right'>🌐 <a data-link-type='text' href='${uri}'>${HtmlUtils.toXMLEscapedText(title)}</a></div>"
         }
-        // URL + Title 🌐 (متن ساده) - از کد الگو
+        // URL + Title 🌐 (متن ساده)
         else if ((trimmed =~ /(https?:\/\/[^\s]+)\s+(.+)/)) {
             def urlTitleMatcher = (trimmed =~ /(https?:\/\/[^\s]+)\s+(.+)/)
             def uri = urlTitleMatcher[0][1].trim()
@@ -395,25 +400,19 @@ def processLinesToHTML(lines, backwardTitle, currentNode, mode = "One-way") {
             def uri = parts[0] ?: ""
             def title
             
-            // 🔥 KEY FIX: اگر backwardTitle وجود دارد (یعنی این یک لینک برگشتی است)
             if (backwardTitle) {
                 title = backwardTitle
             } else {
-                // لینک مستقیم - عنوان را از گره مقصد بگیر
                 title = getTargetNodeTitle(uri, parts.length > 1 ? parts[1]?.trim() : null)
             }
             
-            // انتخاب آیکن بر اساس mode
             def icon
             if (mode == "Two-way") {
                 icon = "🔗↔️ "
             } else {
-                // حالت One-way
                 if (backwardTitle) {
-                    // این یک لینک بازگشتی است
                     icon = "🔗🔙 "
                 } else {
-                    // لینک مستقیم از مبدا به مقصد
                     icon = "🔗↗️ "
                 }
             }
@@ -422,7 +421,6 @@ def processLinesToHTML(lines, backwardTitle, currentNode, mode = "One-way") {
         }
         // متن عادی (نه لینک)
         else {
-            // 🔥 فقط متن ساده (با escaping)
             if (!trimmed.matches(/^(?:[↗↔]️?|\| 🔙)\s*.+$/) && !trimmed.startsWith("<")) {
                 result << HtmlUtils.toXMLEscapedText(trimmed)
             } else if (trimmed.startsWith("<") && trimmed.endsWith(">")) {
@@ -488,7 +486,7 @@ def removeConnectorFromHTML(nodeText, sourceId) {
     }
 }
 
-// 🔥 ساخت backward link در گره مقصد - نسخه جدید: همیشه ایجاد کن!
+// 🔥 ساخت backward link در گره مقصد - نسخه کاملاً اصلاح شده
 def createBackwardTextLinkIfNeeded(targetNode, sourceNode, sourceFreeplaneUri, mode) {
     def sourceId = sourceNode.id
     
@@ -497,16 +495,34 @@ def createBackwardTextLinkIfNeeded(targetNode, sourceNode, sourceFreeplaneUri, m
     def sourceTitle = getFirstLineFromText(extractPlainTextForProcessing(sourceNode))
     println "🔗 ساخت backward link: ${targetNode.id} ← ${sourceId} با عنوان: ${sourceTitle}"
     
+    // 🔥 KEY FIX: ساخت URI صحیح برای backward link
+    // sourceFreeplaneUri حاوی لینک به گره targetNode است (مثلاً freeplane:...#ID_222)
+    // اما ما باید لینکی به گره sourceNode (مثلاً freeplane:...#ID_111) بسازیم
+    
+    // استخراج بخش مپ از URI
+    def mapUri = ""
+    if (sourceFreeplaneUri.contains("#")) {
+        def hashIndex = sourceFreeplaneUri.indexOf("#")
+        mapUri = sourceFreeplaneUri.substring(0, hashIndex)
+    } else {
+        mapUri = sourceFreeplaneUri
+    }
+    
+    // 🔥 ساخت URI جدید که به گره sourceNode (111) اشاره کند
+    def backwardUri = "${mapUri}#${sourceId}"
+    
+    println "   URI اصلی (به مقصد 222): ${sourceFreeplaneUri}"
+    println "   URI جدید (به مبدا 111): ${backwardUri}"
+    
     // 🔥 استخراج محتوای فعلی گره مقصد
     def targetContentLines = extractNodeContent(targetNode)
     
     // 🔥 بررسی کن که آیا لینک مشابه از قبل وجود دارد
     def existingLink = false
-    def targetFreeplaneUri = "freeplane:" + sourceFreeplaneUri
     
     targetContentLines.each { line ->
         def trimmed = line.trim()
-        if (trimmed.startsWith(targetFreeplaneUri)) {
+        if (trimmed.startsWith(backwardUri)) {
             println "⚠️ لینک مشابه از قبل وجود دارد: ${line}"
             existingLink = true
         }
@@ -515,13 +531,13 @@ def createBackwardTextLinkIfNeeded(targetNode, sourceNode, sourceFreeplaneUri, m
     // 🔥 اگر لینک مشابه وجود ندارد، اضافه کن
     if (!existingLink) {
         // ساخت لینک جدید
-        def newLine = targetFreeplaneUri
+        def newLine = backwardUri
         if (sourceTitle && sourceTitle != "لینک") {
-            newLine = "${targetFreeplaneUri} ${sourceTitle}"
+            newLine = "${backwardUri} ${sourceTitle}"
         }
         
         targetContentLines = targetContentLines + [newLine]
-        println "✅ اضافه کردن لینک جدید: ${newLine}"
+        println "✅ اضافه کردن backward link جدید: ${newLine}"
     } else {
         println "⏭️ از ساخت لینک تکراری صرف نظر شد"
         return false
@@ -541,8 +557,14 @@ def createBackwardTextLinkIfNeeded(targetNode, sourceNode, sourceFreeplaneUri, m
     }
     
     targetNode.text = "<html><body>${finalHTML}</body></html>"
-    println "✅ backward link با موفقیت ایجاد/به‌روزرسانی شد"
+    println "✅ backward link با موفقیت ایجاد/به‌روزرسانی شد (از ${targetNode.id} به ${sourceId})"
     return true
+}
+
+// 🔥 تابع جدید: استخراج ID گره از URI فری‌پلین
+def extractNodeIdFromFreeplaneUri(uri) {
+    if (!uri || !uri.contains("#")) return null
+    return uri.substring(uri.lastIndexOf('#') + 1)
 }
 
 // 🔥 آپدیت همسایه‌ها - نسخه بهبود یافته
@@ -635,7 +657,7 @@ def extractFreeplaneLinksFromContent(contentLines) {
             def parts = trimmed.split(' ', 2)
             if (parts[0]) {
                 freeplaneUris << parts[0]
-                println "📌 یافت لینک Freeplane: ${parts[0]}"
+                println "📌 یافت لینک Freeplane: ${parts[0]} (به گره: ${extractNodeIdFromFreeplaneUri(parts[0])})"
             }
         }
     }
@@ -870,14 +892,14 @@ def processNode(mode) {
     println "🔄 ساخت backward link‌ها (در هر دو حالت)"
     freeplaneUris.each { uri ->
         if (uri.contains("#")) {
-            def targetId = uri.substring(uri.lastIndexOf('#') + 1)
+            def targetId = extractNodeIdFromFreeplaneUri(uri)
             println "  🔍 جستجوی گره مقصد با ID: ${targetId}"
             def targetNode = c.find { it.id == targetId }.find()
             if (targetNode && targetNode != node) {
-                println "  ✅ گره مقصد یافت شد: ${targetNode.id}"
+                println "  ✅ گره مقصد یافت شد: ${targetNode.id} (عنوان: ${getFirstLineFromText(extractPlainTextForProcessing(targetNode))})"
                 def created = createBackwardTextLinkIfNeeded(targetNode, node, uri, mode)
                 if (created) {
-                    println "  ✅ backward link با موفقیت ایجاد شد"
+                    println "  ✅ backward link با موفقیت ایجاد شد (از ${targetNode.id} به ${node.id})"
                 } else {
                     println "  ⚠️ backward link از قبل وجود داشت یا ایجاد نشد"
                 }
@@ -931,7 +953,7 @@ try {
     }
     
     processNode(mode)
-    ui.showMessage("✅ v8.9.2 FIXED - حفظ لینک‌های HTML + استثنای @ در عنوان لینک‌ها ✅", 1)
+    ui.showMessage("✅ v9.3.0 FIXED - اصلاح کامل backward link برای لینک‌دهی صحیح ✅", 1)
 } catch (e) {
     println "❌ خطا: ${e.message}"
     e.printStackTrace()
